@@ -16,7 +16,8 @@ import { BoostTimelineChart } from "./components/charts/BoostTimelineChart";
 import { TimelineScrubber } from "./components/timeline/TimelineScrubber";
 import { PlaybackControls } from "./components/timeline/PlaybackControls";
 import { usePlaybackStore } from "./hooks/usePlayback";
-import { Trophy } from "lucide-react";
+import { RotateCcw, Trophy } from "lucide-react";
+import { useKeyboard } from "./hooks/useKeyboard";
 import "./styles.css";
 
 function App() {
@@ -29,6 +30,10 @@ function App() {
     initApiKey,
     selectPlayer,
   } = useReplayStore();
+  const hasFrameData = usePlaybackStore((s) => !!s.frameData);
+  const resetFrameData = usePlaybackStore((s) => s.setFrameData);
+
+  useKeyboard();
 
   useEffect(() => {
     initApiKey();
@@ -46,25 +51,26 @@ function App() {
   orangePlayers.forEach((p) => p.name && teamColors.set(p.name, "orange"));
 
   const selectedTeamColor = teamColors.get(selectedPlayer?.name ?? "") ?? "blue";
-  const hasFrameData = usePlaybackStore((s) => !!s.frameData);
 
   return (
-    <div className="min-h-screen bg-[var(--bg-primary)]">
-      {/* Header */}
-      <header className="sticky top-0 z-10 bg-[var(--bg-primary)]/90 backdrop-blur border-b border-gray-800/50">
-        <div className="max-w-[1600px] mx-auto px-4 py-3 flex items-center gap-4">
+    <div className="h-screen flex flex-col bg-[var(--bg-primary)] overflow-hidden">
+      {/* Header - always visible */}
+      <header className="shrink-0 bg-[var(--bg-secondary)] border-b border-gray-800/50 z-10">
+        <div className="max-w-[1600px] mx-auto px-4 py-2 flex items-center gap-4">
           <div className="flex items-center gap-2 shrink-0">
             <Trophy className="w-5 h-5 text-[var(--accent-blue)]" />
             <h1 className="text-lg font-bold">RL Replay Review</h1>
           </div>
 
-          <div className="flex-1">
+          <div className="flex-1 max-w-xl">
             <ReplayInput />
           </div>
 
           {replay && (
             <div className="text-xs text-[var(--text-secondary)] shrink-0 text-right">
-              <div>{replay.title ?? replay.id}</div>
+              <div className="font-medium text-[var(--text-primary)]">
+                {replay.title ?? replay.id}
+              </div>
               <div>
                 {replay.map_name ?? "Unknown Map"} &middot;{" "}
                 {replay.duration
@@ -79,82 +85,105 @@ function App() {
         </div>
       </header>
 
-      <main className="max-w-[1600px] mx-auto px-4 py-4">
-        {replay ? (
-          <>
-            {/* Score banner */}
-            <div className="flex items-center justify-center gap-8 mb-4 py-3 bg-[var(--bg-secondary)] rounded-lg">
-              <div className="text-right">
-                <div className="text-sm font-medium text-blue-400">
-                  {replay.blue?.name ?? "Blue Team"}
+      {replay ? (
+        <>
+          {/* Score bar + player selector - always visible */}
+          <div className="shrink-0 bg-[var(--bg-primary)] border-b border-gray-800/30 px-4 py-2">
+            <div className="max-w-[1600px] mx-auto">
+              {/* Score */}
+              <div className="flex items-center justify-center gap-6 mb-2">
+                <div className="text-right">
+                  <span className="text-xs font-medium text-blue-400">
+                    {replay.blue?.name ?? "Blue"}
+                  </span>
+                  <span className="text-2xl font-bold ml-2">
+                    {replay.blue?.stats?.core?.goals ?? 0}
+                  </span>
                 </div>
-                <div className="text-3xl font-bold">
-                  {replay.blue?.stats?.core?.goals ?? 0}
+                <span className="text-[var(--text-secondary)] text-xs">vs</span>
+                <div className="text-left">
+                  <span className="text-2xl font-bold mr-2">
+                    {replay.orange?.stats?.core?.goals ?? 0}
+                  </span>
+                  <span className="text-xs font-medium text-orange-400">
+                    {replay.orange?.name ?? "Orange"}
+                  </span>
                 </div>
               </div>
-              <div className="text-[var(--text-secondary)] text-sm">vs</div>
-              <div className="text-left">
-                <div className="text-sm font-medium text-orange-400">
-                  {replay.orange?.name ?? "Orange Team"}
-                </div>
-                <div className="text-3xl font-bold">
-                  {replay.orange?.stats?.core?.goals ?? 0}
-                </div>
-              </div>
-            </div>
 
-            {/* Player selector */}
-            <div className="flex flex-wrap gap-1.5 mb-4">
-              {allPlayers.map((p) => {
-                const team = teamColors.get(p.name ?? "") ?? "blue";
-                const isSelected = selectedPlayer?.name === p.name;
-                const base =
-                  team === "blue"
-                    ? isSelected
-                      ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20"
-                      : "bg-blue-600/20 text-blue-400 hover:bg-blue-600/40"
-                    : isSelected
-                      ? "bg-orange-600 text-white shadow-lg shadow-orange-600/20"
-                      : "bg-orange-600/20 text-orange-400 hover:bg-orange-600/40";
-                return (
+              {/* Player selector + frame data toggle */}
+              <div className="flex items-center gap-2">
+                <div className="flex flex-wrap gap-1 flex-1">
+                  {allPlayers.map((p) => {
+                    const team = teamColors.get(p.name ?? "") ?? "blue";
+                    const isSelected = selectedPlayer?.name === p.name;
+                    const base =
+                      team === "blue"
+                        ? isSelected
+                          ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20"
+                          : "bg-blue-600/20 text-blue-400 hover:bg-blue-600/40"
+                        : isSelected
+                          ? "bg-orange-600 text-white shadow-lg shadow-orange-600/20"
+                          : "bg-orange-600/20 text-orange-400 hover:bg-orange-600/40";
+                    return (
+                      <button
+                        key={p.name}
+                        onClick={() => selectPlayer(p)}
+                        className={`px-3 py-1 rounded text-xs font-medium transition-all ${base}`}
+                      >
+                        {p.name ?? "?"}
+                        {p.mvp && " *"}
+                      </button>
+                    );
+                  })}
+                </div>
+                {hasFrameData && (
                   <button
-                    key={p.name}
-                    onClick={() => selectPlayer(p)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${base}`}
+                    onClick={() => resetFrameData(null)}
+                    className="px-2 py-1 rounded text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]
+                               hover:bg-[var(--bg-card)] transition flex items-center gap-1"
+                    title="Back to stats view"
                   >
-                    {p.name ?? "?"}
-                    {p.mvp && " (MVP)"}
+                    <RotateCcw className="w-3 h-3" />
+                    Stats View
                   </button>
-                );
-              })}
+                )}
+              </div>
             </div>
+          </div>
 
-            <div className="grid grid-cols-12 gap-4">
+          {/* Main content - fills remaining height */}
+          <div className="flex-1 min-h-0 px-4 py-2">
+            <div className="max-w-[1600px] mx-auto h-full grid grid-cols-12 gap-3">
               {/* Left: Team stat cards */}
-              <div className="col-span-3 space-y-4 overflow-y-auto max-h-[calc(100vh-220px)]">
+              <div className="col-span-3 overflow-y-auto pr-1">
                 <div className="space-y-2">
-                  <h3 className="text-xs font-semibold text-blue-400 uppercase tracking-wide">
+                  <h3 className="text-xs font-semibold text-blue-400 uppercase tracking-wide sticky top-0 bg-[var(--bg-primary)] py-1">
                     {replay.blue?.name ?? "Blue Team"}
                   </h3>
                   {bluePlayers.map((p) => (
                     <div
                       key={p.name}
                       onClick={() => selectPlayer(p)}
-                      className="cursor-pointer"
+                      className={`cursor-pointer rounded-lg transition-all ${
+                        selectedPlayer?.name === p.name ? "ring-1 ring-blue-500/50" : ""
+                      }`}
                     >
                       <StatCard player={p} teamColor="blue" />
                     </div>
                   ))}
                 </div>
-                <div className="space-y-2">
-                  <h3 className="text-xs font-semibold text-orange-400 uppercase tracking-wide">
+                <div className="space-y-2 mt-4">
+                  <h3 className="text-xs font-semibold text-orange-400 uppercase tracking-wide sticky top-0 bg-[var(--bg-primary)] py-1">
                     {replay.orange?.name ?? "Orange Team"}
                   </h3>
                   {orangePlayers.map((p) => (
                     <div
                       key={p.name}
                       onClick={() => selectPlayer(p)}
-                      className="cursor-pointer"
+                      className={`cursor-pointer rounded-lg transition-all ${
+                        selectedPlayer?.name === p.name ? "ring-1 ring-orange-500/50" : ""
+                      }`}
                     >
                       <StatCard player={p} teamColor="orange" />
                     </div>
@@ -162,61 +191,63 @@ function App() {
                 </div>
               </div>
 
-              {/* Middle: Field + timeline + selected player detail */}
-              <div className="col-span-5 space-y-4">
+              {/* Middle: Field + controls */}
+              <div className="col-span-5 overflow-y-auto pr-1" data-scroll-middle>
                 {hasFrameData ? (
-                  <>
+                  <div className="space-y-3">
                     <LiveFieldView />
                     <TimelineScrubber />
                     <BoostTimelineChart />
-                  </>
+                  </div>
                 ) : (
-                  <>
+                  <div className="space-y-3">
                     <FieldRenderer
                       positioning={selectedPlayer?.stats?.positioning}
                       playerName={selectedPlayer?.name ?? undefined}
                       teamColor={selectedTeamColor}
                     />
                     <PlaybackControls />
-                  </>
+                  </div>
                 )}
 
                 {selectedPlayer && (
-                  <>
+                  <div className="space-y-3 mt-3">
                     <BoostPanel player={selectedPlayer} />
                     <BoostChart player={selectedPlayer} />
                     <MovementChart player={selectedPlayer} />
                     <PositioningPanel player={selectedPlayer} />
-                  </>
+                  </div>
                 )}
               </div>
 
               {/* Right: Comparison + Analysis */}
-              <div className="col-span-4 space-y-4 overflow-y-auto max-h-[calc(100vh-220px)]">
-                <PlayerComparison
-                  players={allPlayers}
-                  teamColors={teamColors}
-                />
-                <AnalysisPanel
-                  rotationInsights={rotationInsights}
-                  boostInsights={boostInsights}
-                />
+              <div className="col-span-4 overflow-y-auto pl-1">
+                <div className="space-y-3">
+                  <PlayerComparison
+                    players={allPlayers}
+                    teamColors={teamColors}
+                  />
+                  <AnalysisPanel
+                    rotationInsights={rotationInsights}
+                    boostInsights={boostInsights}
+                  />
+                </div>
               </div>
             </div>
-          </>
-        ) : (
-          <div className="flex flex-col items-center justify-center h-[60vh] text-center">
-            <Trophy className="w-16 h-16 text-gray-700 mb-4" />
-            <h2 className="text-xl font-semibold text-[var(--text-secondary)] mb-2">
-              No Replay Loaded
-            </h2>
-            <p className="text-gray-600 max-w-md">
-              Paste a ballchasing.com replay URL or ID in the search bar to
-              start analyzing.
-            </p>
           </div>
-        )}
-      </main>
+        </>
+      ) : (
+        <div className="flex-1 flex flex-col items-center justify-center text-center">
+          <Trophy className="w-16 h-16 text-gray-700 mb-4" />
+          <h2 className="text-xl font-semibold text-[var(--text-secondary)] mb-2">
+            No Replay Loaded
+          </h2>
+          <p className="text-gray-600 max-w-md">
+            Paste a ballchasing.com replay URL or ID in the search bar to
+            start analyzing.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

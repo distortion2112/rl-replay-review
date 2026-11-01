@@ -146,6 +146,16 @@ export function TimelineScrubber() {
           ))}
         </div>
       </div>
+
+      {/* Hotkey hints */}
+      <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-[var(--text-secondary)]/50">
+        <span><kbd className="text-[var(--text-secondary)]">Space</kbd> play/pause</span>
+        <span><kbd className="text-[var(--text-secondary)]">&larr;&rarr;</kbd> step frame</span>
+        <span><kbd className="text-[var(--text-secondary)]">Shift+&larr;&rarr;</kbd> 10 frames</span>
+        <span><kbd className="text-[var(--text-secondary)]">[&thinsp;]</kbd> speed</span>
+        <span><kbd className="text-[var(--text-secondary)]">Tab</kbd> next player</span>
+        <span><kbd className="text-[var(--text-secondary)]">1-6</kbd> select player</span>
+      </div>
     </div>
   );
 }

@@ -33,6 +33,15 @@ pub async fn fetch_replay(
     let client = BallchasingClient::new(api_key);
     let replay = client.fetch_replay(&replay_id).await?;
 
+    // Debug: log first player's demo stats
+    if let Some(blue) = &replay.blue {
+        if let Some(players) = &blue.players {
+            if let Some(p) = players.first() {
+                eprintln!("Player '{}' demo stats: {:?}", p.name.as_deref().unwrap_or("?"), p.stats.as_ref().and_then(|s| s.demo.as_ref()));
+            }
+        }
+    }
+
     if let Ok(mut map) = cache.0.lock() {
         map.insert(replay_id, replay.clone());
     }
@@ -52,12 +61,23 @@ pub async fn download_and_parse_replay(
         .ok_or("No API key configured.")?;
 
     let client = BallchasingClient::new(api_key);
-    let replay_bytes = client.download_replay(&replay_id).await?;
+    let replay_bytes = client.download_replay(&replay_id).await
+        .map_err(|e| format!("Download failed: {}", e))?;
 
-    // Parse in a blocking task to avoid blocking the async runtime
-    tokio::task::spawn_blocking(move || replay_parser::parse_replay(&replay_bytes))
-        .await
-        .map_err(|e| format!("Parse task failed: {}", e))?
+    eprintln!("Downloaded replay: {} bytes", replay_bytes.len());
+
+    let result = tokio::task::spawn_blocking(move || {
+        replay_parser::parse_replay(&replay_bytes)
+            .map_err(|e| format!("Parse failed: {}", e))
+    })
+    .await
+    .map_err(|e| format!("Parse task panicked: {}", e))?;
+
+    match &result {
+        Ok(data) => eprintln!("Parse OK: {} frames, {} players", data.total_frames, data.players.len()),
+        Err(e) => eprintln!("Parse error: {}", e),
+    }
+    result
 }
 
 #[tauri::command]

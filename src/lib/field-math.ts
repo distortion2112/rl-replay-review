@@ -6,6 +6,10 @@ export const FIELD = {
   HALF_LENGTH: 5120,
   GOAL_WIDTH: 1786,
   GOAL_DEPTH: 880,
+  CORNER_RADIUS: 1152, // rounded corner radius in UU
+  CEILING_HEIGHT: 2044, // ceiling height
+  WALL_HEIGHT: 2044,
+  BALL_RADIUS: 92.75,
 };
 
 export interface BoostPad {
