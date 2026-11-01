@@ -1,9 +1,17 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import { FIELD, BOOST_PADS, fieldToCanvas } from "../../lib/field-math";
 import { usePlaybackStore } from "../../hooks/usePlayback";
+import { drawHeatmapOverlay, type HeatmapGrid } from "./HeatmapOverlay";
+import { drawTrails } from "../../lib/trails";
 import type { GameFrame, FramePlayer } from "../../types/frames";
 
-export function LiveFieldView() {
+interface LiveFieldProps {
+  heatmapGrid?: HeatmapGrid | null;
+  showTrails?: boolean;
+  trailSeconds?: number;
+}
+
+export function LiveFieldView({ heatmapGrid, showTrails = true, trailSeconds = 5 }: LiveFieldProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ width: 400, height: 500 });
@@ -48,6 +56,17 @@ export function LiveFieldView() {
 
     // Draw the RL pitch shape with rounded corners and wall ramp shading
     drawPitch(ctx, width, height, pad, drawW, drawH);
+
+    // Heatmap overlay (between pitch and players)
+    if (heatmapGrid && heatmapGrid.max > 0) {
+      drawHeatmapOverlay(ctx, heatmapGrid, width, height, pad);
+    }
+
+    // Rotation trails
+    if (showTrails && frameData) {
+      const currentIdx = usePlaybackStore.getState().currentFrameIndex;
+      drawTrails(ctx, frameData, currentIdx, width, height, pad, trailSeconds);
+    }
 
     // Boost pads (pass current frame for pickup detection)
     drawBoostPads(ctx, width, height, pad, drawW, currentFrame);
@@ -97,7 +116,7 @@ export function LiveFieldView() {
         4, debugY
       );
     }
-  }, [currentFrame, frameData, size]);
+  }, [currentFrame, frameData, size, heatmapGrid, showTrails, trailSeconds]);
 
   return (
     <div ref={containerRef} className="w-full">

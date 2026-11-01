@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useReplayStore } from "./hooks/useReplay";
 import { ApiKeySetup } from "./components/input/ApiKeySetup";
 import { ReplayInput } from "./components/input/ReplayInput";
@@ -10,11 +10,14 @@ import { PlayerComparison } from "./components/stats/PlayerComparison";
 import { AnalysisPanel } from "./components/stats/AnalysisPanel";
 import { FieldRenderer } from "./components/field/FieldRenderer";
 import { LiveFieldView } from "./components/field/LiveFieldView";
+import { HeatmapControls, useHeatmapState, useHeatmapGrid } from "./components/field/HeatmapOverlay";
+import { TrailControls } from "./components/field/TrailControls";
 import { BoostChart } from "./components/charts/BoostChart";
 import { MovementChart } from "./components/charts/MovementChart";
 import { BoostTimelineChart } from "./components/charts/BoostTimelineChart";
 import { TimelineScrubber } from "./components/timeline/TimelineScrubber";
 import { PlaybackControls } from "./components/timeline/PlaybackControls";
+import { GoalReplays } from "./components/timeline/GoalReplays";
 import { usePlaybackStore } from "./hooks/usePlayback";
 import { RotateCcw, Trophy } from "lucide-react";
 import { useKeyboard } from "./hooks/useKeyboard";
@@ -32,6 +35,10 @@ function App() {
   } = useReplayStore();
   const hasFrameData = usePlaybackStore((s) => !!s.frameData);
   const resetFrameData = usePlaybackStore((s) => s.setFrameData);
+  const heatmapState = useHeatmapState();
+  const heatmapGrid = useHeatmapGrid(heatmapState.mode, heatmapState.selectedIdx);
+  const [showTrails, setShowTrails] = useState(true);
+  const [trailSeconds, setTrailSeconds] = useState(5);
 
   useKeyboard();
 
@@ -195,8 +202,22 @@ function App() {
               <div className="col-span-5 overflow-y-auto pr-1" data-scroll-middle>
                 {hasFrameData ? (
                   <div className="space-y-3">
-                    <LiveFieldView />
+                    <LiveFieldView
+                      heatmapGrid={heatmapGrid}
+                      showTrails={showTrails}
+                      trailSeconds={trailSeconds}
+                    />
                     <TimelineScrubber />
+                    <GoalReplays />
+                    <div className="grid grid-cols-2 gap-2">
+                      <TrailControls
+                        showTrails={showTrails}
+                        setShowTrails={setShowTrails}
+                        trailSeconds={trailSeconds}
+                        setTrailSeconds={setTrailSeconds}
+                      />
+                      <HeatmapControls {...heatmapState} />
+                    </div>
                     <BoostTimelineChart />
                   </div>
                 ) : (
