@@ -1,13 +1,14 @@
 mod api;
 mod analysis;
 mod commands;
+mod parser;
 
 use std::collections::HashMap;
 use std::sync::Mutex;
 
 use commands::{
-    analyze_replay_boost, analyze_replay_rotation, fetch_replay, get_api_key, set_api_key,
-    ReplayCache,
+    analyze_replay_boost, analyze_replay_rotation, download_and_parse_replay, fetch_replay,
+    get_api_key, set_api_key, ReplayCache,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -22,6 +23,7 @@ pub fn run() {
             get_api_key,
             analyze_replay_rotation,
             analyze_replay_boost,
+            download_and_parse_replay,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

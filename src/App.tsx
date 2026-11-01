@@ -9,8 +9,13 @@ import { PositioningPanel } from "./components/stats/PositioningPanel";
 import { PlayerComparison } from "./components/stats/PlayerComparison";
 import { AnalysisPanel } from "./components/stats/AnalysisPanel";
 import { FieldRenderer } from "./components/field/FieldRenderer";
+import { LiveFieldView } from "./components/field/LiveFieldView";
 import { BoostChart } from "./components/charts/BoostChart";
 import { MovementChart } from "./components/charts/MovementChart";
+import { BoostTimelineChart } from "./components/charts/BoostTimelineChart";
+import { TimelineScrubber } from "./components/timeline/TimelineScrubber";
+import { PlaybackControls } from "./components/timeline/PlaybackControls";
+import { usePlaybackStore } from "./hooks/usePlayback";
 import { Trophy } from "lucide-react";
 import "./styles.css";
 
@@ -41,6 +46,7 @@ function App() {
   orangePlayers.forEach((p) => p.name && teamColors.set(p.name, "orange"));
 
   const selectedTeamColor = teamColors.get(selectedPlayer?.name ?? "") ?? "blue";
+  const hasFrameData = usePlaybackStore((s) => !!s.frameData);
 
   return (
     <div className="min-h-screen bg-[var(--bg-primary)]">
@@ -156,13 +162,24 @@ function App() {
                 </div>
               </div>
 
-              {/* Middle: Field + selected player detail */}
+              {/* Middle: Field + timeline + selected player detail */}
               <div className="col-span-5 space-y-4">
-                <FieldRenderer
-                  positioning={selectedPlayer?.stats?.positioning}
-                  playerName={selectedPlayer?.name ?? undefined}
-                  teamColor={selectedTeamColor}
-                />
+                {hasFrameData ? (
+                  <>
+                    <LiveFieldView />
+                    <TimelineScrubber />
+                    <BoostTimelineChart />
+                  </>
+                ) : (
+                  <>
+                    <FieldRenderer
+                      positioning={selectedPlayer?.stats?.positioning}
+                      playerName={selectedPlayer?.name ?? undefined}
+                      teamColor={selectedTeamColor}
+                    />
+                    <PlaybackControls />
+                  </>
+                )}
 
                 {selectedPlayer && (
                   <>

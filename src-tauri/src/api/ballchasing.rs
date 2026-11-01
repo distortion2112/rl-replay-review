@@ -43,4 +43,32 @@ impl BallchasingClient {
             .await
             .map_err(|e| format!("Failed to parse replay data: {}", e))
     }
+
+    pub async fn download_replay(&self, replay_id: &str) -> Result<Vec<u8>, String> {
+        let url = format!("{}/replays/{}/file", BASE_URL, replay_id);
+
+        let response = self
+            .client
+            .get(&url)
+            .header("Authorization", &self.api_key)
+            .send()
+            .await
+            .map_err(|e| format!("Download failed: {}", e))?;
+
+        let status = response.status();
+        if !status.is_success() {
+            return Err(match status.as_u16() {
+                401 => "Invalid API key.".to_string(),
+                404 => format!("Replay file '{}' not found.", replay_id),
+                429 => "Rate limited. Please wait.".to_string(),
+                _ => format!("Download error {}", status),
+            });
+        }
+
+        response
+            .bytes()
+            .await
+            .map(|b| b.to_vec())
+            .map_err(|e| format!("Failed to read replay file: {}", e))
+    }
 }
