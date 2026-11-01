@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::sync::Mutex;
+use tauri::State;
 use tauri_plugin_store::StoreExt;
 
 use crate::api::ballchasing::BallchasingClient;
@@ -5,11 +8,21 @@ use crate::api::models::{PlayerData, ReplayData};
 use crate::analysis::boost::{analyze_boost, BoostInsight};
 use crate::analysis::rotation::{analyze_rotation, RotationInsight};
 
+pub struct ReplayCache(pub Mutex<HashMap<String, ReplayData>>);
+
 #[tauri::command]
 pub async fn fetch_replay(
     app: tauri::AppHandle,
+    cache: State<'_, ReplayCache>,
     replay_id: String,
 ) -> Result<ReplayData, String> {
+    // Check cache first
+    if let Ok(map) = cache.0.lock() {
+        if let Some(cached) = map.get(&replay_id) {
+            return Ok(cached.clone());
+        }
+    }
+
     let store = app.store("settings.json").map_err(|e| e.to_string())?;
     let api_key = store
         .get("api_key")
@@ -17,7 +30,14 @@ pub async fn fetch_replay(
         .ok_or("No API key configured. Please set your ballchasing.com API key.")?;
 
     let client = BallchasingClient::new(api_key);
-    client.fetch_replay(&replay_id).await
+    let replay = client.fetch_replay(&replay_id).await?;
+
+    // Store in cache
+    if let Ok(mut map) = cache.0.lock() {
+        map.insert(replay_id, replay.clone());
+    }
+
+    Ok(replay)
 }
 
 #[tauri::command]
