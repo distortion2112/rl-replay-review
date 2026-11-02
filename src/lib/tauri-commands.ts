@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { ReplayData, PlayerData } from "../types/replay";
-import type { RotationInsight, BoostInsight } from "../types/analysis";
+import type { RotationInsight, BoostInsight, RateLimitStatus } from "../types/analysis";
 import type { FrameData } from "../types/frames";
 
 export async function fetchReplay(replayId: string): Promise<ReplayData> {
@@ -31,6 +31,10 @@ export async function downloadAndParseReplay(
   replayId: string
 ): Promise<FrameData> {
   return invoke("download_and_parse_replay", { replayId });
+}
+
+export async function getRateLimitStatus(): Promise<RateLimitStatus> {
+  return invoke("get_rate_limit_status");
 }
 
 export function extractReplayId(input: string): string {
