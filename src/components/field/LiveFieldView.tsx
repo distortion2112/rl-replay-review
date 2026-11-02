@@ -1,8 +1,9 @@
-import { useRef, useEffect, useState, useCallback } from "react";
+import { useRef, useEffect, useState, useCallback, useMemo } from "react";
 import { FIELD, BOOST_PADS, fieldToCanvas } from "../../lib/field-math";
 import { usePlaybackStore } from "../../hooks/usePlayback";
 import { drawHeatmapOverlay, type HeatmapGrid } from "./HeatmapOverlay";
 import { drawTrails } from "../../lib/trails";
+import { interpolateFrame } from "../../lib/interpolation";
 import type { GameFrame, FramePlayer } from "../../types/frames";
 
 interface LiveFieldProps {
@@ -17,7 +18,12 @@ export function LiveFieldView({ heatmapGrid, showTrails = true, trailSeconds = 5
   const [size, setSize] = useState({ width: 400, height: 500 });
 
   const { frameData } = usePlaybackStore();
-  const currentFrame = usePlaybackStore((s) => s.currentFrame());
+  const currentFrameIndex = usePlaybackStore((s) => s.currentFrameIndex);
+  const playbackTime = usePlaybackStore((s) => s.playbackTime);
+  const currentFrame = useMemo(
+    () => (frameData ? interpolateFrame(frameData.frames, currentFrameIndex, playbackTime) : null),
+    [frameData, currentFrameIndex, playbackTime]
+  );
 
   const updateSize = useCallback(() => {
     const container = containerRef.current;
@@ -64,8 +70,7 @@ export function LiveFieldView({ heatmapGrid, showTrails = true, trailSeconds = 5
 
     // Rotation trails
     if (showTrails && frameData) {
-      const currentIdx = usePlaybackStore.getState().currentFrameIndex;
-      drawTrails(ctx, frameData, currentIdx, width, height, pad, trailSeconds);
+      drawTrails(ctx, frameData, currentFrameIndex, width, height, pad, trailSeconds);
     }
 
     // Boost pads (pass current frame for pickup detection)
@@ -116,7 +121,7 @@ export function LiveFieldView({ heatmapGrid, showTrails = true, trailSeconds = 5
         4, debugY
       );
     }
-  }, [currentFrame, frameData, size, heatmapGrid, showTrails, trailSeconds]);
+  }, [currentFrame, currentFrameIndex, frameData, size, heatmapGrid, showTrails, trailSeconds]);
 
   return (
     <div ref={containerRef} className="w-full">

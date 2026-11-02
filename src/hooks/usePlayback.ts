@@ -4,6 +4,8 @@ import type { FrameData, GameFrame } from "../types/frames";
 interface PlaybackStore {
   frameData: FrameData | null;
   currentFrameIndex: number;
+  /** Continuous replay time in seconds; between frame timestamps during playback. */
+  playbackTime: number;
   playing: boolean;
   speed: number;
   loading: boolean;
@@ -13,6 +15,8 @@ interface PlaybackStore {
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   setFrameIndex: (index: number) => void;
+  /** Advance playback to a continuous time; `index` is the latest frame at or before it. */
+  advancePlayback: (index: number, time: number) => void;
   play: () => void;
   pause: () => void;
   togglePlay: () => void;
@@ -24,19 +28,23 @@ interface PlaybackStore {
 export const usePlaybackStore = create<PlaybackStore>((set, get) => ({
   frameData: null,
   currentFrameIndex: 0,
+  playbackTime: 0,
   playing: false,
   speed: 1,
   loading: false,
   error: null,
 
-  setFrameData: (data) => set({ frameData: data, currentFrameIndex: 0, playing: false }),
+  setFrameData: (data) =>
+    set({ frameData: data, currentFrameIndex: 0, playbackTime: data?.frames[0]?.time ?? 0, playing: false }),
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
   setFrameIndex: (index) => {
     const data = get().frameData;
     if (!data) return;
-    set({ currentFrameIndex: Math.max(0, Math.min(index, data.frames.length - 1)) });
+    const clamped = Math.max(0, Math.min(index, data.frames.length - 1));
+    set({ currentFrameIndex: clamped, playbackTime: data.frames[clamped]?.time ?? 0 });
   },
+  advancePlayback: (index, time) => set({ currentFrameIndex: index, playbackTime: time }),
   play: () => set({ playing: true }),
   pause: () => set({ playing: false }),
   togglePlay: () => set((s) => ({ playing: !s.playing })),
@@ -61,6 +69,6 @@ export const usePlaybackStore = create<PlaybackStore>((set, get) => ({
         hi = mid;
       }
     }
-    set({ currentFrameIndex: lo });
+    set({ currentFrameIndex: lo, playbackTime: data.frames[lo]?.time ?? 0 });
   },
 }));
