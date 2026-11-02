@@ -10,7 +10,7 @@ use tauri::Manager;
 use api::rate_limit::RateLimiter;
 use commands::{
     analyze_replay_boost, analyze_replay_rotation, download_and_parse_replay, fetch_replay,
-    get_api_key, get_rate_limit_status, set_api_key, ReplayCache,
+    get_api_key, get_rate_limit_status, search_player_replays, set_api_key, ReplayCache,
 };
 use tauri_plugin_store::StoreExt;
 
@@ -34,6 +34,7 @@ pub fn run() {
             set_api_key,
             get_api_key,
             get_rate_limit_status,
+            search_player_replays,
             analyze_replay_rotation,
             analyze_replay_boost,
             download_and_parse_replay,

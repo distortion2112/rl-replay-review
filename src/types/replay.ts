@@ -145,3 +145,44 @@ export interface DemoStats {
   inflicted?: number;
   taken?: number;
 }
+
+// --- Replay search/list types ---
+
+export interface ReplayListResponse {
+  list: ReplayListItem[];
+  count?: number;
+  next?: string;
+}
+
+export interface ReplayListItem {
+  id: string;
+  date?: string;
+  playlist_id?: string;
+  playlist_name?: string;
+  duration?: number;
+  overtime?: boolean;
+  overtime_seconds?: number;
+  map_code?: string;
+  map_name?: string;
+  min_rank?: RankInfo;
+  max_rank?: RankInfo;
+  season?: number;
+  replay_title?: string;
+}
+
+export interface RankInfo {
+  id?: string;
+  tier?: number;
+  division?: number;
+  name?: string;
+}
+
+export interface ReplaySearchParams {
+  player_id?: string;
+  playlist?: string;
+  season?: number;
+  count?: number;
+  sort_by?: string;
+  sort_dir?: string;
+  next?: string;
+}
