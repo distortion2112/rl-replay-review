@@ -57,6 +57,7 @@ src/
 - **Live actor linkage, never whole-replay maps**: Actor IDs are recycled. A destroyed car's ID (goal reset, demo) is often reassigned to a *different* player's next car. All car→PRI, PRI→name and boost→car links are tracked per frame and dropped on actor deletion. A single car→player map built over the whole replay mislabels positions and drops players.
 - **Car-PRI linking**: Uses `Engine.Pawn:PlayerReplicationInfo` on the car. Falls back to generic `ActiveActor` sniffing only if that attribute is absent from the replay's object table.
 - **Boost tracking**: Maps `boost_component` to car actors live via `TAGame.CarComponent_TA:Vehicle`, not via pickup detection.
+- **Sampled positions are projected to sample time**: Each rigid body updates every 1–3 network frames on its own schedule, so a raw position at a sample frame is 0–~70ms stale by a varying amount. The parser projects it forward by `linear_velocity × age` (capped at 0.25s). Without this, per-sample movement is uneven and interpolated playback pulses.
 - **Demo gaps are expected**: A demolished player has no car actor for ~3s before respawn, so they are absent from those frames.
 
 ---

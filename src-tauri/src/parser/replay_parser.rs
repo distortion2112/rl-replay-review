@@ -4,6 +4,10 @@ use boxcars::{Attribute, HeaderProp, ParserBuilder};
 
 use super::frame_data::*;
 
+/// Longest staleness a sampled position is projected forward by its velocity.
+/// Normal update gaps are <=~0.1s; anything older is left as-is.
+const MAX_EXTRAPOLATION_S: f32 = 0.25;
+
 pub fn parse_replay(data: &[u8]) -> Result<FrameData, String> {
     let replay = ParserBuilder::new(data)
         .on_error_check_crc()
@@ -71,6 +75,11 @@ pub fn parse_replay(data: &[u8]) -> Result<FrameData, String> {
 
     let mut game_frames: Vec<GameFrame> = Vec::new();
     let mut actor_positions: HashMap<i32, Position> = HashMap::new();
+    // Each rigid body updates on its own irregular schedule (every 1-3 network frames),
+    // so at a sample frame a position can be up to ~70ms stale by a varying amount.
+    // Keep when it was last updated and at what velocity, so samples can be projected
+    // to the sample time; otherwise per-sample movement is uneven and playback pulses.
+    let mut actor_motion: HashMap<i32, (f32, boxcars::Vector3f)> = HashMap::new();
     let mut ball_actor_id: Option<i32> = None;
     let mut alive_cars: Vec<i32> = Vec::new();
     let mut live_car_to_pri: HashMap<i32, i32> = HashMap::new();
@@ -83,6 +92,7 @@ pub fn parse_replay(data: &[u8]) -> Result<FrameData, String> {
         for deleted in &frame.deleted_actors {
             let id = deleted.0;
             actor_positions.remove(&id);
+            actor_motion.remove(&id);
             alive_cars.retain(|c| *c != id);
             live_car_to_pri.remove(&id);
             live_pri_name.remove(&id);
@@ -108,6 +118,7 @@ pub fn parse_replay(data: &[u8]) -> Result<FrameData, String> {
                     y: loc.y as f32,
                     z: loc.z as f32,
                 });
+                actor_motion.remove(&aid);
             }
         }
 
@@ -121,6 +132,14 @@ pub fn parse_replay(data: &[u8]) -> Result<FrameData, String> {
                         y: rb.location.y,
                         z: rb.location.z,
                     });
+                    match rb.linear_velocity {
+                        Some(v) if !rb.sleeping => {
+                            actor_motion.insert(aid, (frame.time, v));
+                        }
+                        _ => {
+                            actor_motion.remove(&aid);
+                        }
+                    }
                 }
                 Attribute::String(name) if Some(oid) == player_name_attr => {
                     live_pri_name.insert(aid, name.clone());
@@ -156,7 +175,21 @@ pub fn parse_replay(data: &[u8]) -> Result<FrameData, String> {
 
         // Sample every 3 frames
         if frame_idx % 3 == 0 {
-            let ball_pos = ball_actor_id.and_then(|id| actor_positions.get(&id).copied());
+            let position_at = |id: i32| -> Option<Position> {
+                let pos = actor_positions.get(&id).copied()?;
+                Some(match actor_motion.get(&id) {
+                    Some((updated, v)) => {
+                        let age = frame.time - updated;
+                        if age > 0.0 && age <= MAX_EXTRAPOLATION_S {
+                            Position { x: pos.x + v.x * age, y: pos.y + v.y * age, z: pos.z + v.z * age }
+                        } else {
+                            pos
+                        }
+                    }
+                    None => pos,
+                })
+            };
+            let ball_pos = ball_actor_id.and_then(position_at);
 
             let mut car_boost: HashMap<i32, u8> = HashMap::new();
             for (comp, car) in &live_boost_to_car {
@@ -181,7 +214,7 @@ pub fn parse_replay(data: &[u8]) -> Result<FrameData, String> {
 
                 player_frames.push(PlayerFrame {
                     player_index,
-                    position: actor_positions.get(&car_id).copied(),
+                    position: position_at(car_id),
                     boost_amount: car_boost.get(&car_id).copied(),
                 });
             }
