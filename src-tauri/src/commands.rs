@@ -18,10 +18,9 @@ pub async fn fetch_replay(
     cache: State<'_, ReplayCache>,
     replay_id: String,
 ) -> Result<ReplayData, String> {
-    if let Ok(map) = cache.0.lock() {
-        if let Some(cached) = map.get(&replay_id) {
+    if let Ok(map) = cache.0.lock()
+        && let Some(cached) = map.get(&replay_id) {
             return Ok(cached.clone());
-        }
     }
 
     let store = app.store("settings.json").map_err(|e| e.to_string())?;
@@ -34,12 +33,10 @@ pub async fn fetch_replay(
     let replay = client.fetch_replay(&replay_id).await?;
 
     // Debug: log first player's demo stats
-    if let Some(blue) = &replay.blue {
-        if let Some(players) = &blue.players {
-            if let Some(p) = players.first() {
-                eprintln!("Player '{}' demo stats: {:?}", p.name.as_deref().unwrap_or("?"), p.stats.as_ref().and_then(|s| s.demo.as_ref()));
-            }
-        }
+    if let Some(blue) = &replay.blue
+        && let Some(players) = &blue.players
+        && let Some(p) = players.first() {
+            eprintln!("Player '{}' demo stats: {:?}", p.name.as_deref().unwrap_or("?"), p.stats.as_ref().and_then(|s| s.demo.as_ref()));
     }
 
     if let Ok(mut map) = cache.0.lock() {
