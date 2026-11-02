@@ -64,7 +64,6 @@ pub fn parse_replay(data: &[u8]) -> Result<FrameData, String> {
     // State tracking
     let mut actor_positions: HashMap<i32, Position> = HashMap::new();
     let mut car_actors: Vec<i32> = Vec::new();
-    let mut ball_actor_id: Option<i32> = None;
     let mut boost_comp_actors: Vec<i32> = Vec::new();
 
     // PRI tracking
@@ -103,12 +102,9 @@ pub fn parse_replay(data: &[u8]) -> Result<FrameData, String> {
                 if !car_actors.contains(&aid) {
                     car_actors.push(aid);
                 }
-            } else if Some(oid) == ball_archetype {
-                ball_actor_id = Some(aid);
-            } else if Some(oid) == boost_archetype {
-                if !boost_comp_actors.contains(&aid) {
+            } else if Some(oid) == boost_archetype
+                && !boost_comp_actors.contains(&aid) {
                     boost_comp_actors.push(aid);
-                }
             }
 
             if let Some(loc) = &na.initial_trajectory.location {
@@ -176,16 +172,15 @@ pub fn parse_replay(data: &[u8]) -> Result<FrameData, String> {
     // Build car -> header player index
     let mut car_to_player: HashMap<i32, usize> = HashMap::new();
     for (&car_id, &pri_id) in &car_to_pri {
-        if let Some(name) = pri_name.get(&pri_id) {
-            if let Some(hp) = header_players.iter().find(|p| p.name == *name) {
+        if let Some(name) = pri_name.get(&pri_id)
+            && let Some(hp) = header_players.iter().find(|p| p.name == *name) {
                 car_to_player.insert(car_id, hp.index);
-            }
         }
     }
 
     // Second pass: extract frame snapshots
     actor_positions.clear();
-    ball_actor_id = None;
+    let mut ball_actor_id: Option<i32> = None;
     let mut live_boost_amount: HashMap<i32, u8> = HashMap::new();
     let mut live_boost_to_car: HashMap<i32, i32> = HashMap::new();
     let mut alive_cars: Vec<i32> = Vec::new();
@@ -197,10 +192,9 @@ pub fn parse_replay(data: &[u8]) -> Result<FrameData, String> {
             if Some(oid) == ball_archetype {
                 ball_actor_id = Some(aid);
             }
-            if Some(oid) == car_archetype {
-                if !alive_cars.contains(&aid) {
+            if Some(oid) == car_archetype
+                && !alive_cars.contains(&aid) {
                     alive_cars.push(aid);
-                }
             }
             if let Some(loc) = &na.initial_trajectory.location {
                 actor_positions.insert(aid, Position {
@@ -236,10 +230,9 @@ pub fn parse_replay(data: &[u8]) -> Result<FrameData, String> {
                 Attribute::ReplicatedBoost(boost) => {
                     live_boost_amount.insert(aid, boost.boost_amount);
                 }
-                Attribute::ActiveActor(aa) if Some(oid) == vehicle_attr => {
-                    if aa.active {
+                Attribute::ActiveActor(aa) if Some(oid) == vehicle_attr
+                    && aa.active => {
                         live_boost_to_car.insert(aid, aa.actor.0);
-                    }
                 }
                 _ => {}
             }
@@ -315,8 +308,4 @@ pub fn parse_replay(data: &[u8]) -> Result<FrameData, String> {
 
 fn find_object_id(objects: &[String], pattern: &str) -> Option<i32> {
     objects.iter().position(|name| name == pattern).map(|i| i as i32)
-}
-
-fn find_object_id_contains(objects: &[String], pattern: &str) -> Option<i32> {
-    objects.iter().position(|name| name.contains(pattern)).map(|i| i as i32)
 }
