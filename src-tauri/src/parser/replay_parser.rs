@@ -230,10 +230,9 @@ pub fn parse_replay(data: &[u8]) -> Result<FrameData, String> {
                 Attribute::ReplicatedBoost(boost) => {
                     live_boost_amount.insert(aid, boost.boost_amount);
                 }
-                Attribute::ActiveActor(aa) if Some(oid) == vehicle_attr => {
-                    if aa.active {
+                Attribute::ActiveActor(aa) if Some(oid) == vehicle_attr
+                    && aa.active => {
                         live_boost_to_car.insert(aid, aa.actor.0);
-                    }
                 }
                 _ => {}
             }
