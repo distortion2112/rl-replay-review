@@ -25,10 +25,6 @@ pub fn parse_replay(data: &[u8]) -> Result<FrameData, String> {
 
     let objects = &replay.objects;
 
-    let obj_name = |id: i32| -> &str {
-        objects.get(id as usize).map(|s| s.as_str()).unwrap_or("")
-    };
-
     // Exact archetype IDs
     let car_archetype = find_object_id(objects, "Archetypes.Car.Car_Default");
     let ball_archetype = find_object_id(objects, "Archetypes.Ball.Ball_Default");
@@ -36,11 +32,10 @@ pub fn parse_replay(data: &[u8]) -> Result<FrameData, String> {
 
     // Attribute object IDs
     let player_name_attr = find_object_id(objects, "Engine.PlayerReplicationInfo:PlayerName");
-    let team_attr = find_object_id(objects, "Engine.PlayerReplicationInfo:Team");
     let vehicle_attr = find_object_id(objects, "TAGame.CarComponent_TA:Vehicle");
 
     eprintln!("Archetypes: car={:?} ball={:?} boost={:?}", car_archetype, ball_archetype, boost_archetype);
-    eprintln!("Attrs: name={:?} team={:?} vehicle={:?}", player_name_attr, team_attr, vehicle_attr);
+    eprintln!("Attrs: name={:?} vehicle={:?}", player_name_attr, vehicle_attr);
 
     // Extract player info from header
     let mut header_players: Vec<FramePlayer> = Vec::new();
@@ -61,52 +56,52 @@ pub fn parse_replay(data: &[u8]) -> Result<FrameData, String> {
     }
     eprintln!("Header players: {:?}", header_players.iter().map(|p| format!("{}(t{})", p.name, p.team)).collect::<Vec<_>>());
 
-    // State tracking
-    let mut actor_positions: HashMap<i32, Position> = HashMap::new();
-    let mut car_actors: Vec<i32> = Vec::new();
-    let mut boost_comp_actors: Vec<i32> = Vec::new();
+    // Actor IDs are recycled: when a car is destroyed (goal reset, demo) its ID can be
+    // reassigned to a different player's next car. All car <-> player linkage is therefore
+    // tracked live, per frame, and dropped when the actor is deleted. A whole-replay
+    // car -> player map attributes positions to the wrong players.
+    let pawn_pri_attr = find_object_id(objects, "Engine.Pawn:PlayerReplicationInfo");
 
-    // PRI tracking
-    let mut pri_name: HashMap<i32, String> = HashMap::new();
-    let mut pri_team: HashMap<i32, u8> = HashMap::new();
-
-    // Linkage: boost component -> car (via Vehicle attr)
-    let mut boost_to_car: HashMap<i32, i32> = HashMap::new();
-    // Boost amount on component actors
-    let mut boost_amount: HashMap<i32, u8> = HashMap::new();
-
-    // We'll discover car<->PRI links by tracking ALL ActiveActor updates
-    // and correlating: if a PRI-like actor sends an ActiveActor pointing to a known car, that's a link
-    // Also: if a car-like actor sends an ActiveActor pointing to a known PRI, that's a link
-    let mut car_to_pri: HashMap<i32, i32> = HashMap::new();
-
-    // Track which actors are PRIs (by seeing PlayerName updates on them)
-    let mut known_pris: Vec<i32> = Vec::new();
-
-    let mut game_frames: Vec<GameFrame> = Vec::new();
     let mut goals: Vec<GoalEvent> = Vec::new();
-
     for tick in &replay.tick_marks {
         if tick.description.contains("Goal") {
             goals.push(GoalEvent { frame: tick.frame as usize, time: 0.0 });
         }
     }
 
-    // First pass: discover all actors and relationships
-    for frame in &network_frames.frames {
+    let mut game_frames: Vec<GameFrame> = Vec::new();
+    let mut actor_positions: HashMap<i32, Position> = HashMap::new();
+    let mut ball_actor_id: Option<i32> = None;
+    let mut alive_cars: Vec<i32> = Vec::new();
+    let mut live_car_to_pri: HashMap<i32, i32> = HashMap::new();
+    let mut live_pri_name: HashMap<i32, String> = HashMap::new();
+    let mut live_boost_amount: HashMap<i32, u8> = HashMap::new();
+    let mut live_boost_to_car: HashMap<i32, i32> = HashMap::new();
+
+    for (frame_idx, frame) in network_frames.frames.iter().enumerate() {
+        // Deletions are processed before new actors so a recycled ID starts clean.
+        for deleted in &frame.deleted_actors {
+            let id = deleted.0;
+            actor_positions.remove(&id);
+            alive_cars.retain(|c| *c != id);
+            live_car_to_pri.remove(&id);
+            live_pri_name.remove(&id);
+            live_boost_to_car.remove(&id);
+            live_boost_amount.remove(&id);
+            if ball_actor_id == Some(id) {
+                ball_actor_id = None;
+            }
+        }
+
         for na in &frame.new_actors {
             let aid = na.actor_id.0;
             let oid = na.object_id.0;
-
-            if Some(oid) == car_archetype {
-                if !car_actors.contains(&aid) {
-                    car_actors.push(aid);
-                }
-            } else if Some(oid) == boost_archetype
-                && !boost_comp_actors.contains(&aid) {
-                    boost_comp_actors.push(aid);
+            if Some(oid) == ball_archetype {
+                ball_actor_id = Some(aid);
             }
-
+            if Some(oid) == car_archetype && !alive_cars.contains(&aid) {
+                alive_cars.push(aid);
+            }
             if let Some(loc) = &na.initial_trajectory.location {
                 actor_positions.insert(aid, Position {
                     x: loc.x as f32,
@@ -119,7 +114,6 @@ pub fn parse_replay(data: &[u8]) -> Result<FrameData, String> {
         for update in &frame.updated_actors {
             let aid = update.actor_id.0;
             let oid = update.object_id.0;
-
             match &update.attribute {
                 Attribute::RigidBody(rb) => {
                     actor_positions.insert(aid, Position {
@@ -129,110 +123,32 @@ pub fn parse_replay(data: &[u8]) -> Result<FrameData, String> {
                     });
                 }
                 Attribute::String(name) if Some(oid) == player_name_attr => {
-                    pri_name.insert(aid, name.clone());
-                    if !known_pris.contains(&aid) {
-                        known_pris.push(aid);
-                    }
-                }
-                Attribute::ActiveActor(aa) if Some(oid) == team_attr => {
-                    // Team: check the object name of the team actor
-                    let team_name = obj_name(aa.actor.0);
-                    let team = if team_name.contains("1") || team_name.contains("Orange") { 1u8 } else { 0u8 };
-                    pri_team.insert(aid, team);
-                }
-                Attribute::ActiveActor(aa) if Some(oid) == vehicle_attr => {
-                    // Boost component `aid` -> car `aa.actor`
-                    if aa.active {
-                        boost_to_car.insert(aid, aa.actor.0);
-                    }
-                }
-                Attribute::ActiveActor(aa) if aa.active => {
-                    // Generic ActiveActor: check if this links a car to a PRI or vice versa
-                    let target = aa.actor.0;
-                    if car_actors.contains(&aid) && known_pris.contains(&target) {
-                        car_to_pri.insert(aid, target);
-                    } else if known_pris.contains(&aid) && car_actors.contains(&target) {
-                        car_to_pri.insert(target, aid);
-                    }
-                }
-                Attribute::ReplicatedBoost(boost) => {
-                    boost_amount.insert(aid, boost.boost_amount);
-                }
-                _ => {}
-            }
-        }
-    }
-
-    eprintln!("Discovery: {} cars, {} PRIs, {} boost comps, {} car->pri links",
-        car_actors.len(), known_pris.len(), boost_comp_actors.len(), car_to_pri.len());
-    for (&car, &pri) in &car_to_pri {
-        eprintln!("  car {} -> PRI {} (name={:?})", car, pri, pri_name.get(&pri));
-    }
-
-    // Build car -> header player index
-    let mut car_to_player: HashMap<i32, usize> = HashMap::new();
-    for (&car_id, &pri_id) in &car_to_pri {
-        if let Some(name) = pri_name.get(&pri_id)
-            && let Some(hp) = header_players.iter().find(|p| p.name == *name) {
-                car_to_player.insert(car_id, hp.index);
-        }
-    }
-
-    // Second pass: extract frame snapshots
-    actor_positions.clear();
-    let mut ball_actor_id: Option<i32> = None;
-    let mut live_boost_amount: HashMap<i32, u8> = HashMap::new();
-    let mut live_boost_to_car: HashMap<i32, i32> = HashMap::new();
-    let mut alive_cars: Vec<i32> = Vec::new();
-
-    for (frame_idx, frame) in network_frames.frames.iter().enumerate() {
-        for na in &frame.new_actors {
-            let aid = na.actor_id.0;
-            let oid = na.object_id.0;
-            if Some(oid) == ball_archetype {
-                ball_actor_id = Some(aid);
-            }
-            if Some(oid) == car_archetype
-                && !alive_cars.contains(&aid) {
-                    alive_cars.push(aid);
-            }
-            if let Some(loc) = &na.initial_trajectory.location {
-                actor_positions.insert(aid, Position {
-                    x: loc.x as f32,
-                    y: loc.y as f32,
-                    z: loc.z as f32,
-                });
-            }
-        }
-
-        for deleted in &frame.deleted_actors {
-            let id = deleted.0;
-            actor_positions.remove(&id);
-            alive_cars.retain(|c| *c != id);
-            live_boost_to_car.remove(&id);
-            live_boost_amount.remove(&id);
-            if ball_actor_id == Some(id) {
-                ball_actor_id = None;
-            }
-        }
-
-        for update in &frame.updated_actors {
-            let aid = update.actor_id.0;
-            let oid = update.object_id.0;
-            match &update.attribute {
-                Attribute::RigidBody(rb) => {
-                    actor_positions.insert(aid, Position {
-                        x: rb.location.x,
-                        y: rb.location.y,
-                        z: rb.location.z,
-                    });
+                    live_pri_name.insert(aid, name.clone());
                 }
                 Attribute::ReplicatedBoost(boost) => {
                     live_boost_amount.insert(aid, boost.boost_amount);
                 }
-                Attribute::ActiveActor(aa) if Some(oid) == vehicle_attr
-                    && aa.active => {
+                Attribute::ActiveActor(aa) if Some(oid) == vehicle_attr => {
+                    if aa.active {
                         live_boost_to_car.insert(aid, aa.actor.0);
+                    }
+                }
+                Attribute::ActiveActor(aa) if Some(oid) == pawn_pri_attr => {
+                    if aa.active {
+                        live_car_to_pri.insert(aid, aa.actor.0);
+                    } else {
+                        live_car_to_pri.remove(&aid);
+                    }
+                }
+                Attribute::ActiveActor(aa) if pawn_pri_attr.is_none() && aa.active => {
+                    // Fallback for replays without the Pawn PRI attribute: sniff any
+                    // ActiveActor that links a live car to a known PRI, or vice versa.
+                    let target = aa.actor.0;
+                    if alive_cars.contains(&aid) && live_pri_name.contains_key(&target) {
+                        live_car_to_pri.insert(aid, target);
+                    } else if live_pri_name.contains_key(&aid) && alive_cars.contains(&target) {
+                        live_car_to_pri.insert(target, aid);
+                    }
                 }
                 _ => {}
             }
@@ -242,7 +158,6 @@ pub fn parse_replay(data: &[u8]) -> Result<FrameData, String> {
         if frame_idx % 3 == 0 {
             let ball_pos = ball_actor_id.and_then(|id| actor_positions.get(&id).copied());
 
-            // Build live car -> boost lookup
             let mut car_boost: HashMap<i32, u8> = HashMap::new();
             for (comp, car) in &live_boost_to_car {
                 if let Some(amount) = live_boost_amount.get(comp) {
@@ -253,19 +168,21 @@ pub fn parse_replay(data: &[u8]) -> Result<FrameData, String> {
             let mut player_frames = Vec::new();
             let mut seen_players: Vec<usize> = Vec::new();
             for &car_id in &alive_cars {
-                let player_index = car_to_player.get(&car_id).copied().unwrap_or(usize::MAX);
-                if player_index == usize::MAX || seen_players.contains(&player_index) {
+                let player_index = live_car_to_pri
+                    .get(&car_id)
+                    .and_then(|pri| live_pri_name.get(pri))
+                    .and_then(|name| header_players.iter().find(|p| p.name == *name))
+                    .map(|p| p.index);
+                let Some(player_index) = player_index else { continue };
+                if seen_players.contains(&player_index) {
                     continue;
                 }
                 seen_players.push(player_index);
 
-                let pos = actor_positions.get(&car_id).copied();
-                let boost = car_boost.get(&car_id).copied();
-
                 player_frames.push(PlayerFrame {
                     player_index,
-                    position: pos,
-                    boost_amount: boost,
+                    position: actor_positions.get(&car_id).copied(),
+                    boost_amount: car_boost.get(&car_id).copied(),
                 });
             }
 
