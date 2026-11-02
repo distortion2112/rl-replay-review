@@ -222,3 +222,22 @@ fn position_copy_semantics() {
     assert_eq!(pos.y, pos2.y);
     assert_eq!(pos.z, pos2.z);
 }
+
+#[test]
+fn parse_ranked_2v2_players_tracked_across_car_respawns() {
+    // Car actor IDs are recycled across respawns and can move between players.
+    // A full-match player must appear in nearly every frame; only demo respawns
+    // (~3s each) should leave gaps.
+    let data = load_fixture("ranked-2v2.replay");
+    let fd = parse_replay(&data).unwrap();
+    let mut present = vec![0usize; fd.players.len()];
+    for frame in &fd.frames {
+        for p in &frame.players {
+            present[p.player_index] += 1;
+        }
+    }
+    for (i, count) in present.iter().enumerate() {
+        let ratio = *count as f64 / fd.frames.len() as f64;
+        assert!(ratio > 0.9, "{} present in only {:.0}% of frames", fd.players[i].name, ratio * 100.0);
+    }
+}
