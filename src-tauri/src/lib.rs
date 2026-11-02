@@ -1,7 +1,7 @@
 mod api;
 mod analysis;
 mod commands;
-mod parser;
+pub mod parser;
 
 use std::collections::HashMap;
 use std::sync::Mutex;

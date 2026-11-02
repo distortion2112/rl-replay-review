@@ -159,18 +159,43 @@ Keep commits atomic — one logical change per commit. Don't bundle unrelated ch
 
 ---
 
+## Agent Startup Checklist
+
+Run through this list at the **start of every session**, in order:
+
+1. **Read this file.** You're doing it now. Good.
+2. **Check GitHub Issues.** Look for issues assigned to you or unassigned issues labeled `priority:high` or `priority:medium`. This is your work queue.
+3. **Check for handoff notes.** Look in `/home/distortion2112/.claude/projects/-home-distortion2112-code-rl-replay-review/memory/` for any `handoff.md` or recent updates to `MEMORY.md`. Previous agents leave context there when a session ends mid-work.
+4. **Check open PRs.** If there's a PR in progress from a previous session, pick it up — don't start a duplicate branch.
+5. **Check recent commits on `main`.** Run `git log --oneline -10` to understand what just landed and avoid conflicts.
+6. **Pick one issue.** Assign yourself, create a branch (`feature/`, `fix/`, `chore/`), and start work. One issue at a time.
+
+If there are no issues, no handoffs, and no PRs in progress — ask the user what to work on. Don't invent work.
+
+### Before Ending a Session
+
+If you're mid-task and the session is ending:
+
+1. **Commit and push** your work-in-progress branch (even if incomplete).
+2. **Write a handoff note** to `memory/handoff.md` with:
+   - What issue you were working on
+   - What's done, what's left
+   - Any blockers or decisions needed
+   - The branch name
+3. **Update the issue** with a comment summarizing progress.
+
+---
+
 ## Agent Guidelines
 
 When working as an AI agent on this project:
 
-1. **Read this file first.** Every session.
-2. **Check open issues** before starting work. Don't invent work — pick up tracked issues.
-3. **Create an issue first** if you identify new work that needs doing. Then branch, implement, PR.
-4. **Don't make sweeping changes.** Small, focused PRs. If a change touches more than ~5 files across unrelated areas, break it up.
-5. **Don't "improve" code you're not working on.** No drive-by refactors, no adding comments to untouched files, no reformatting.
-6. **Test your changes.** At minimum: `cargo build` for Rust, `npm run build` for TypeScript. Run the app if you can.
-7. **Update this file** if you make architectural decisions. Add them to the Key Design Decisions section.
-8. **Coordinate via issues.** If another agent is working on something, don't start a conflicting branch. Check what's assigned.
+1. **Don't make sweeping changes.** Small, focused PRs. If a change touches more than ~5 files across unrelated areas, break it up.
+2. **Don't "improve" code you're not working on.** No drive-by refactors, no adding comments to untouched files, no reformatting.
+3. **Test your changes.** At minimum: `cargo build` for Rust, `npm run build` for TypeScript. Run the app if you can.
+4. **Update this file** if you make architectural decisions. Add them to the Key Design Decisions section.
+5. **Coordinate via issues.** If another agent is working on something, don't start a conflicting branch. Check what's assigned.
+6. **Create an issue first** if you identify new work that needs doing. Then branch, implement, PR.
 
 ---
 
