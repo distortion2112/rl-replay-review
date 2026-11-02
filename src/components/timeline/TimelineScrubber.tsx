@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Play, Pause, SkipBack, SkipForward } from "lucide-react";
 import { usePlaybackStore } from "../../hooks/usePlayback";
+import { MAX_FRAME_GAP_S } from "../../lib/interpolation";
 
 export function TimelineScrubber() {
   const {
@@ -17,7 +18,10 @@ export function TimelineScrubber() {
   const animRef = useRef<number>(0);
   const lastTimeRef = useRef<number>(0);
 
-  // Playback loop
+  // Playback loop. The clock is the store's continuous `playbackTime`, not the
+  // current frame's timestamp: frames are sampled ~8/s, far coarser than display
+  // refresh, so fractional time must accumulate. Seeks (scrub, keys, goal jumps)
+  // reset `playbackTime` to the target frame via setFrameIndex/seekToTime.
   useEffect(() => {
     if (!playing || !frameData) return;
 
@@ -26,27 +30,30 @@ export function TimelineScrubber() {
       const elapsed = (now - lastTimeRef.current) / 1000;
       lastTimeRef.current = now;
 
-      const { currentFrameIndex, frameData, speed } = usePlaybackStore.getState();
+      const { currentFrameIndex, playbackTime, frameData, speed } = usePlaybackStore.getState();
       if (!frameData) return;
+      const frames = frameData.frames;
+      let clock = playbackTime + elapsed * speed;
 
-      const currentTime = frameData.frames[currentFrameIndex]?.time ?? 0;
-      const targetTime = currentTime + elapsed * speed;
-
-      // Find next frame at target time
+      // Latest frame at or before the clock. Dead time with no frame data
+      // (goal celebrations/replays) is skipped rather than played as a freeze.
       let nextIdx = currentFrameIndex;
-      while (
-        nextIdx < frameData.frames.length - 1 &&
-        frameData.frames[nextIdx].time < targetTime
-      ) {
+      while (nextIdx < frames.length - 1) {
+        const next = frames[nextIdx + 1].time;
+        if (next - frames[nextIdx].time > MAX_FRAME_GAP_S && clock > frames[nextIdx].time) {
+          clock = Math.max(clock, next);
+        }
+        if (next > clock) break;
         nextIdx++;
       }
 
-      if (nextIdx >= frameData.frames.length - 1) {
+      if (nextIdx >= frames.length - 1) {
+        usePlaybackStore.getState().setFrameIndex(frames.length - 1);
         usePlaybackStore.getState().pause();
         return;
       }
 
-      usePlaybackStore.getState().setFrameIndex(nextIdx);
+      usePlaybackStore.getState().advancePlayback(nextIdx, clock);
       animRef.current = requestAnimationFrame(tick);
     };
 
