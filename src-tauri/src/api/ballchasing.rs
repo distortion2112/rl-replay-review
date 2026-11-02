@@ -1,4 +1,5 @@
 use crate::api::models::ReplayData;
+use crate::api::rate_limit::RateLimiter;
 use reqwest::Client;
 
 const BASE_URL: &str = "https://ballchasing.com/api";
@@ -6,17 +7,25 @@ const BASE_URL: &str = "https://ballchasing.com/api";
 pub struct BallchasingClient {
     client: Client,
     api_key: String,
+    rate_limiter: RateLimiter,
 }
 
 impl BallchasingClient {
-    pub fn new(api_key: String) -> Self {
+    pub fn new(api_key: String, rate_limiter: RateLimiter) -> Self {
         Self {
             client: Client::new(),
             api_key,
+            rate_limiter,
         }
     }
 
-    pub async fn fetch_replay(&self, replay_id: &str) -> Result<ReplayData, String> {
+    pub async fn fetch_replay(
+        &self,
+        replay_id: &str,
+        store: &tauri_plugin_store::Store<tauri::Wry>,
+    ) -> Result<ReplayData, String> {
+        self.rate_limiter.acquire(store).await?;
+
         let url = format!("{}/replays/{}", BASE_URL, replay_id);
 
         let response = self
@@ -26,6 +35,8 @@ impl BallchasingClient {
             .send()
             .await
             .map_err(|e| format!("Request failed: {}", e))?;
+
+        self.rate_limiter.update_from_headers(response.headers()).await;
 
         let status = response.status();
         if !status.is_success() {
@@ -44,7 +55,13 @@ impl BallchasingClient {
             .map_err(|e| format!("Failed to parse replay data: {}", e))
     }
 
-    pub async fn download_replay(&self, replay_id: &str) -> Result<Vec<u8>, String> {
+    pub async fn download_replay(
+        &self,
+        replay_id: &str,
+        store: &tauri_plugin_store::Store<tauri::Wry>,
+    ) -> Result<Vec<u8>, String> {
+        self.rate_limiter.acquire(store).await?;
+
         let url = format!("{}/replays/{}/file", BASE_URL, replay_id);
 
         let response = self
@@ -54,6 +71,8 @@ impl BallchasingClient {
             .send()
             .await
             .map_err(|e| format!("Download failed: {}", e))?;
+
+        self.rate_limiter.update_from_headers(response.headers()).await;
 
         let status = response.status();
         if !status.is_success() {

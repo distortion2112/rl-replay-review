@@ -5,6 +5,7 @@ use tauri_plugin_store::StoreExt;
 
 use crate::api::ballchasing::BallchasingClient;
 use crate::api::models::{PlayerData, ReplayData};
+use crate::api::rate_limit::{RateLimitStatus, RateLimiter};
 use crate::analysis::boost::{analyze_boost, BoostInsight};
 use crate::analysis::rotation::{analyze_rotation, RotationInsight};
 use crate::parser::frame_data::FrameData;
@@ -16,6 +17,7 @@ pub struct ReplayCache(pub Mutex<HashMap<String, ReplayData>>);
 pub async fn fetch_replay(
     app: tauri::AppHandle,
     cache: State<'_, ReplayCache>,
+    rate_limiter: State<'_, RateLimiter>,
     replay_id: String,
 ) -> Result<ReplayData, String> {
     if let Ok(map) = cache.0.lock()
@@ -29,8 +31,8 @@ pub async fn fetch_replay(
         .and_then(|v| v.as_str().map(|s| s.to_string()))
         .ok_or("No API key configured. Please set your ballchasing.com API key.")?;
 
-    let client = BallchasingClient::new(api_key);
-    let replay = client.fetch_replay(&replay_id).await?;
+    let client = BallchasingClient::new(api_key, (*rate_limiter).clone());
+    let replay = client.fetch_replay(&replay_id, &store).await?;
 
     // Debug: log first player's demo stats
     if let Some(blue) = &replay.blue
@@ -49,6 +51,7 @@ pub async fn fetch_replay(
 #[tauri::command]
 pub async fn download_and_parse_replay(
     app: tauri::AppHandle,
+    rate_limiter: State<'_, RateLimiter>,
     replay_id: String,
 ) -> Result<FrameData, String> {
     let store = app.store("settings.json").map_err(|e| e.to_string())?;
@@ -57,8 +60,8 @@ pub async fn download_and_parse_replay(
         .and_then(|v| v.as_str().map(|s| s.to_string()))
         .ok_or("No API key configured.")?;
 
-    let client = BallchasingClient::new(api_key);
-    let replay_bytes = client.download_replay(&replay_id).await
+    let client = BallchasingClient::new(api_key, (*rate_limiter).clone());
+    let replay_bytes = client.download_replay(&replay_id, &store).await
         .map_err(|e| format!("Download failed: {}", e))?;
 
     eprintln!("Downloaded replay: {} bytes", replay_bytes.len());
@@ -92,6 +95,13 @@ pub async fn get_api_key(app: tauri::AppHandle) -> Result<Option<String>, String
         .get("api_key")
         .and_then(|v| v.as_str().map(|s| s.to_string()));
     Ok(key)
+}
+
+#[tauri::command]
+pub async fn get_rate_limit_status(
+    rate_limiter: State<'_, RateLimiter>,
+) -> Result<RateLimitStatus, String> {
+    Ok(rate_limiter.status().await)
 }
 
 #[tauri::command]

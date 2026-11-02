@@ -9,6 +9,14 @@ export interface RotationInsight {
   explanation: string;
 }
 
+export interface RateLimitStatus {
+  tier: "free" | "patron";
+  calls_used: number;
+  calls_remaining: number;
+  weekly_budget: number;
+  week_resets_at: string;
+}
+
 export interface BoostInsight {
   player_name: string;
   efficiency_score: number;

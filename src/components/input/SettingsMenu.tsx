@@ -1,12 +1,21 @@
-import { useState } from "react";
-import { Settings, X, KeyRound, Trash2 } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Settings, X, KeyRound, Trash2, Activity } from "lucide-react";
 import { useReplayStore } from "../../hooks/useReplay";
+import { getRateLimitStatus } from "../../lib/tauri-commands";
+import type { RateLimitStatus } from "../../types/analysis";
 
 export function SettingsMenu() {
   const [open, setOpen] = useState(false);
   const [newKey, setNewKey] = useState("");
   const [saving, setSaving] = useState(false);
+  const [rateLimit, setRateLimit] = useState<RateLimitStatus | null>(null);
   const { apiKey, saveApiKey } = useReplayStore();
+
+  useEffect(() => {
+    if (open) {
+      getRateLimitStatus().then(setRateLimit).catch(() => {});
+    }
+  }, [open]);
 
   const handleChangeKey = async () => {
     if (!newKey.trim()) return;
@@ -34,6 +43,12 @@ export function SettingsMenu() {
     );
   }
 
+  const budgetPct = rateLimit
+    ? (rateLimit.calls_used / rateLimit.weekly_budget) * 100
+    : 0;
+  const budgetColor =
+    budgetPct > 80 ? "var(--accent-red)" : budgetPct > 50 ? "var(--accent-orange)" : "var(--accent-green, #22c55e)";
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="bg-[var(--bg-card)] rounded-xl p-6 w-96 shadow-2xl">
@@ -57,6 +72,35 @@ export function SettingsMenu() {
               {apiKey ? `${apiKey.slice(0, 8)}${"*".repeat(20)}` : "Not set"}
             </div>
           </div>
+
+          {rateLimit && (
+            <div>
+              <label className="text-xs text-[var(--text-secondary)] block mb-1">
+                <Activity className="w-3 h-3 inline mr-1" />
+                API Budget ({rateLimit.tier === "patron" ? "Patron" : "Free"} tier)
+              </label>
+              <div className="bg-[var(--bg-secondary)] rounded px-3 py-2">
+                <div className="flex justify-between text-sm mb-1">
+                  <span>{rateLimit.calls_used} / {rateLimit.weekly_budget} calls</span>
+                  <span className="text-[var(--text-secondary)]">
+                    {rateLimit.calls_remaining} left
+                  </span>
+                </div>
+                <div className="w-full h-2 bg-gray-700 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{
+                      width: `${Math.min(budgetPct, 100)}%`,
+                      backgroundColor: budgetColor,
+                    }}
+                  />
+                </div>
+                <div className="text-xs text-[var(--text-secondary)] mt-1">
+                  Resets {rateLimit.week_resets_at}
+                </div>
+              </div>
+            </div>
+          )}
 
           <div>
             <label className="text-xs text-[var(--text-secondary)] block mb-1">
