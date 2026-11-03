@@ -26,8 +26,9 @@ export default defineConfig(() => ({
         }
       : undefined,
     watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      // 3. tell Vite to ignore watching `src-tauri`, and `tools/` (the benchmark
+      //    collector's SQLite writes otherwise trigger a page reload on every commit)
+      ignored: ["**/src-tauri/**", "**/tools/**"],
     },
   },
 }));
