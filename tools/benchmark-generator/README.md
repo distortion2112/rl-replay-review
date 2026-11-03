@@ -69,12 +69,13 @@ There's no working rank API yet, so current-season anchors are looked up by hand
 ```bash
 python3 anchors.py validate --season f22          # how good the stat-based tier guess is
 python3 anchors.py candidates --season f24 --out data/anchor_candidates_f24.csv
-# fill in rank_2v2 (+ division, checked_on) for each row from its tracker_url
+python3 anchors.py lookup data/anchor_candidates_f24.csv     # opens each tracker link; you type the rank
 python3 anchors.py import data/anchor_candidates_f24.csv
 ```
 
 - **`candidates`.** Pools one list page per day over `--days`. It keeps frequent uploaders, so each lookup labels many games, and fetches a few of their games. It then spreads the list across tiers from `--min-tier` (default Diamond 1) using a rough tier guess: the weighted median of where the player's top rank-signal stats sit along the tier medians.
 - **The guess only spreads the list.** It is never used as a label. On f22 it is unbiased per game but noisy: about 57% within one tier and 71% within two, from Diamond up.
+- **`lookup`.** Walks the CSV one player at a time. It opens the tracker.gg link in your normal browser. You type the 2v2 rank and division (`c2 3`, `diamond 2 4`, `gc1 2`, `ssl`), Enter to skip, `r` to reopen, `q` to quit. It checks every entry, saves after each one and resumes where you left off (`--revisit` includes skipped rows). A person reads every rank: nothing scrapes tracker.gg, whose terms and Cloudflare protection rule out automation.
 - **`import`.** Accepts ranks typed as `diamond-2`, `Diamond 2`, `Diamond II`, `D2`, `GC1`, `SSL`. Rows without a rank are skipped. Anchors are stored with `rank_source = 'manual'` and `as_of = checked_on`.
 - **Diamond and up only.** The f22 anchor test showed lobby labels from anchors are reliable from about Diamond up, and not in Bronze or Silver.
 

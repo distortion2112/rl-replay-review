@@ -9,6 +9,7 @@ about Diamond up.
   validate   How well the stat-based tier estimate matches true ranks (f22)
   candidates Pick frequent uploaders from recent games, spread across estimated
              tiers, and write a CSV to fill in with looked-up ranks
+  lookup     Walk the CSV: open each tracker link in your browser, type the rank
   import     Load the filled-in CSV as anchors (rank_source 'manual')
 """
 
@@ -252,6 +253,101 @@ def parse_rank(text: str) -> int | None:
     return TIER_INDEX.get(f"{name}-{num}")
 
 
+def parse_entry(text: str) -> tuple[int, int | None] | None:
+    """A typed lookup: rank, optionally followed by a division 1-4.
+
+    'c2 3' -> (champion-2, 3); 'diamond 2 4' -> (diamond-2, 4);
+    'gc1' -> (grand-champion-1, None); 'ssl' -> (supersonic-legend, 1).
+    """
+    t = text.strip()
+    parts = t.split()
+    if len(parts) >= 2 and parts[-1] in ("1", "2", "3", "4"):
+        tier = parse_rank(" ".join(parts[:-1]))
+        if tier is not None:
+            return tier, int(parts[-1])
+    tier = parse_rank(t)
+    if tier is None:
+        return None
+    return tier, (1 if tier == TIER_INDEX["supersonic-legend"] else None)
+
+
+def _write_csv(path: Path, fieldnames: list[str], rows: list[dict]) -> None:
+    tmp = path.with_suffix(".tmp")
+    with tmp.open("w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=fieldnames)
+        w.writeheader()
+        w.writerows(rows)
+    tmp.replace(path)  # atomic: a crash never leaves a half-written file
+
+
+def _label(tier: int) -> str:
+    return TIERS[tier].replace("-", " ").title()
+
+
+def cmd_lookup(args) -> None:
+    import webbrowser
+
+    path = Path(args.csv)
+    with path.open(newline="") as fh:
+        reader = csv.DictReader(fh)
+        fieldnames = list(reader.fieldnames or [])
+        rows = list(reader)
+    todo = [
+        r for r in rows
+        if not (r.get("rank_2v2") or "").strip() and (args.revisit or (r.get("notes") or "").strip() != "skipped")
+    ]
+    done = len(rows) - len(todo)
+    print(f"{len(todo)} to look up ({done} already done or skipped).")
+    print("Type the 2v2 rank, then division: 'c2 3', 'diamond 2 4', 'gc1 2', 'ssl'.")
+    print("Enter = skip (can't find / looks wrong), 'r' = reopen link, 'q' = save and quit.\n")
+    today = datetime.now().date().isoformat()  # local date: what the user sees on tracker.gg
+
+    for n, row in enumerate(todo, 1):
+        url = row.get("tracker_url", "")
+        print(f"[{n}/{len(todo)}] {row['name']}  ({row['platform']}, my guess {row.get('estimated_tier', '?')})")
+        if url and not args.no_browser:
+            webbrowser.open(url)
+        while True:
+            try:
+                text = input("  rank> ").strip()
+            except EOFError:
+                text = "q"
+            if text.lower() == "q":
+                _write_csv(path, fieldnames, rows)
+                print(f"Saved. {sum(1 for r in rows if (r.get('rank_2v2') or '').strip())} ranks recorded.")
+                return
+            if text.lower() == "r":
+                if url and not args.no_browser:
+                    webbrowser.open(url)
+                continue
+            if not text:
+                row["notes"] = "skipped"
+                print("  skipped")
+                break
+            entry = parse_entry(text)
+            if entry is None:
+                print("  couldn't read that. Try 'c2 3', 'diamond 2 4', 'gc1 2' or 'ssl'.")
+                continue
+            tier, division = entry
+            if division is None:
+                div_text = input(f"  {_label(tier)}: division 1-4? ").strip()
+                if div_text not in ("1", "2", "3", "4"):
+                    print("  needs a division 1-4; let's try that player again.")
+                    continue
+                division = int(div_text)
+            row["rank_2v2"] = TIERS[tier]
+            row["division"] = str(division)
+            row["checked_on"] = today
+            if (row.get("notes") or "").strip() == "skipped":
+                row["notes"] = ""
+            print(f"  ✓ {_label(tier)} div {division}")
+            break
+        _write_csv(path, fieldnames, rows)
+
+    recorded = sum(1 for r in rows if (r.get("rank_2v2") or "").strip())
+    print(f"\nAll done. {recorded} ranks recorded. Next: python3 anchors.py import {path}")
+
+
 def cmd_import(args) -> None:
     store = Store(Path(args.db))
     loaded, skipped, errors = 0, 0, []
@@ -269,7 +365,7 @@ def cmd_import(args) -> None:
             division = int(div_text) if div_text.isdigit() and 1 <= int(div_text) <= 4 else 1
             if tier == TIER_INDEX["supersonic-legend"]:
                 division = 1
-            as_of = (row.get("checked_on") or "").strip() or datetime.now(timezone.utc).date().isoformat()
+            as_of = (row.get("checked_on") or "").strip() or datetime.now().date().isoformat()
             store.db.execute(
                 "INSERT OR REPLACE INTO anchors VALUES (?, ?, ?, 'manual', ?)",
                 (season_number(row["season"]), row["player"], tier * 4 + division - 1, as_of),
@@ -303,11 +399,16 @@ def main(argv: list[str] | None = None) -> None:
     c.add_argument("--per-tier", type=int, default=5)
     c.add_argument("--out", required=True)
 
+    lk = sub.add_parser("lookup", help="Walk the CSV, opening each tracker link, and type ranks in")
+    lk.add_argument("csv")
+    lk.add_argument("--revisit", action="store_true", help="include rows previously skipped")
+    lk.add_argument("--no-browser", action="store_true", help="don't open links (for testing)")
+
     i = sub.add_parser("import", help="Load a filled-in candidates CSV as manual anchors")
     i.add_argument("csv")
 
     args = p.parse_args(argv)
-    {"validate": cmd_validate, "candidates": cmd_candidates, "import": cmd_import}[args.cmd](args)
+    {"validate": cmd_validate, "candidates": cmd_candidates, "lookup": cmd_lookup, "import": cmd_import}[args.cmd](args)
 
 
 if __name__ == "__main__":

@@ -130,6 +130,16 @@ class Anchors(unittest.TestCase):
         for bad in ["", "diamond", "diamond 4", "platinum-9", "legend"]:
             self.assertIsNone(parse_rank(bad), bad)
 
+    def test_parse_entry(self):
+        from anchors import parse_entry
+        self.assertEqual(parse_entry("c2 3"), (TIERS.index("champion-2"), 3))
+        self.assertEqual(parse_entry("Diamond 2 4"), (TIERS.index("diamond-2"), 4))
+        self.assertEqual(parse_entry("diamond ii"), (TIERS.index("diamond-2"), None))
+        self.assertEqual(parse_entry("gc1"), (TIERS.index("grand-champion-1"), None))
+        self.assertEqual(parse_entry("ssl"), (TIERS.index("supersonic-legend"), 1))
+        self.assertIsNone(parse_entry("c2 7"))
+        self.assertIsNone(parse_entry("champ"))
+
     def test_tier_position_interpolates_and_clamps(self):
         from anchors import _tier_position
         rising = [(10, 100.0), (11, 200.0), (12, 300.0)]
