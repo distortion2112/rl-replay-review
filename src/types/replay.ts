@@ -168,6 +168,29 @@ export interface ReplayListItem {
   max_rank?: RankInfo;
   season?: number;
   replay_title?: string;
+  /** who played, as listed by search (name and platform id only) */
+  blue?: ListTeam;
+  orange?: ListTeam;
+}
+
+export interface ListTeam {
+  players?: { name?: string; id?: { platform?: string; id?: string } }[];
+}
+
+/** Replays from a pasted ballchasing.com search, and who they could be. */
+export interface SiteSearchResult {
+  replays: ReplayListItem[];
+  /** every platform id listed under a searched name (or a searched id), most games first */
+  identities: SearchIdentity[];
+  /** filters from the pasted search that were not applied, with the reason */
+  ignored: string[];
+}
+
+export interface SearchIdentity {
+  /** "<platform>:<id>" */
+  player_id: string;
+  name: string;
+  games: number;
 }
 
 export interface RankInfo {

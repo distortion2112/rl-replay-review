@@ -1,4 +1,5 @@
 /** Pure helpers for the coaching screen. */
+import type { ReplayListItem } from "../types/replay";
 
 /** ballchasing rank ids, lowest to highest (same order as the benchmarks). */
 export const RANKS = [
@@ -41,6 +42,70 @@ export function parsePlayerInput(text: string): string | null {
     return `${pair[1].toLowerCase()}:${pair[2]}`;
   }
   return null;
+}
+
+/**
+ * A search copied from ballchasing.com's replay list, e.g.
+ * https://ballchasing.com/?player-name=you. The backend validates it fully.
+ */
+export function isSiteSearchUrl(text: string): boolean {
+  try {
+    const url = new URL(text.trim());
+    const host = url.hostname.replace(/^www\./, "");
+    return (
+      host === "ballchasing.com" &&
+      (url.pathname === "/" || url.pathname === "/replays") &&
+      (url.searchParams.has("player-name") || url.searchParams.has("player-id"))
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The ballchasing search for what's typed in the player-name box: a pasted search
+ * link as is, otherwise a search for that exact name. Null when empty or another link.
+ */
+export function nameSearchUrl(text: string): string | null {
+  const t = text.trim();
+  if (!t) return null;
+  if (isSiteSearchUrl(t)) return t;
+  if (/^[a-z]+:\/\//i.test(t) || /ballchasing\.com/i.test(t)) return null;
+  return `https://ballchasing.com/?player-name=${encodeURIComponent(t)}`;
+}
+
+/** What to show in the player-name box for a saved search: the bare name if that's all it is. */
+export function nameSearchText(url: string): string {
+  try {
+    const u = new URL(url);
+    const names = u.searchParams.getAll("player-name");
+    return names.length === 1 && [...u.searchParams.keys()].length === 1 ? names[0] : url;
+  } catch {
+    return url;
+  }
+}
+
+/** "<platform>:<id>" of every player a search lists for a replay. */
+export function listedIds(r: ReplayListItem): string[] {
+  return [...(r.blue?.players ?? []), ...(r.orange?.players ?? [])].flatMap((p) =>
+    p.id?.platform && p.id?.id ? [`${p.id.platform}:${p.id.id}`] : [],
+  );
+}
+
+/**
+ * Replays from several searches as one list: each replay once, newest first, at most
+ * `limit`. Replays a search lists without any of `ids` are dropped before any details
+ * are fetched (a name search also finds other people with the same name).
+ */
+export function mergeReplays(lists: ReplayListItem[][], ids: string[], limit: number): ReplayListItem[] {
+  const byId = new Map<string, ReplayListItem>();
+  for (const r of lists.flat()) {
+    const listed = listedIds(r);
+    if (listed.length > 0 && !listed.some((id) => ids.includes(id))) continue;
+    if (!byId.has(r.id)) byId.set(r.id, r);
+  }
+  const time = (r: ReplayListItem) => (r.date ? Date.parse(r.date) || 0 : 0); // dates carry their own offsets
+  return [...byId.values()].sort((a, b) => time(b) - time(a)).slice(0, limit);
 }
 
 export const FINDING_GROUPS = ["movement", "boost", "positioning", "core", "demo"] as const;

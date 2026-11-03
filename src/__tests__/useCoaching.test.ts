@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const commands = vi.hoisted(() => ({
   searchPlayerReplays: vi.fn(),
+  searchSiteReplays: vi.fn(),
   buildPlayerAggregate: vi.fn(),
   generateCoachingReport: vi.fn(),
   computePlaystyle: vi.fn(),
@@ -53,7 +54,8 @@ describe("useCoaching", () => {
     expect(commands.searchPlayerReplays).toHaveBeenCalledWith(
       expect.objectContaining({ player_id: "epic:me", playlist: "ranked-doubles", count: 3, sort_by: "replay-date" }),
     );
-    expect(commands.buildPlayerAggregate).toHaveBeenCalledWith("epic:me", ["a", "b", "c"]);
+    expect(commands.buildPlayerAggregate).toHaveBeenCalledWith("epic:me", ["a", "b", "c"], []);
+    expect(commands.searchSiteReplays).not.toHaveBeenCalled();
     expect(commands.generateCoachingReport).toHaveBeenCalledWith(expect.objectContaining({ name: "Me" }), "champion-1");
     expect(listeners.unlisten).toHaveBeenCalled();
     const s = useCoachingStore.getState();
@@ -61,6 +63,38 @@ describe("useCoaching", () => {
     expect(s.report?.summary).toBe("ok");
     expect(s.profile?.name).toBe("Me");
     expect(JSON.parse(localStorage.getItem("coaching-profile")!).name).toBe("Me");
+  });
+
+  it("adds games from a pasted search, newest first, keeping only the player's accounts", async () => {
+    const game = (id: string, date: string, player: string) => ({
+      id,
+      date,
+      blue: { players: [{ name: "x", id: { platform: player.split(":")[0], id: player.split(":")[1] } }] },
+    });
+    commands.searchPlayerReplays.mockResolvedValue({
+      list: [game("a", "2026-10-03T10:00:00Z", "epic:me"), game("b", "2026-10-01T10:00:00Z", "epic:me")],
+    });
+    commands.searchSiteReplays.mockResolvedValue({
+      replays: [
+        game("c", "2026-10-03T08:00:00-05:00", "steam:old"), // 13:00Z: newer than "a", though it sorts before it as text
+        game("a", "2026-10-03T10:00:00Z", "epic:me"),
+        game("d", "2026-10-04T10:00:00Z", "epic:stranger"),
+      ],
+      identities: [],
+      ignored: [],
+    });
+    commands.buildPlayerAggregate.mockResolvedValue({ player: "epic:me", name: "Me", games: [], game_count: 3, skipped: [] });
+    commands.generateCoachingReport.mockResolvedValue({ games: 3 });
+    commands.computePlaystyle.mockResolvedValue({ axes: [] });
+    commands.renderCoachingReport.mockResolvedValue({ summary: "ok", items: [] });
+
+    const url = "https://ballchasing.com/?player-name=me";
+    useCoachingStore.getState().setProfile({ ...profile, searchUrl: url, aliases: ["steam:old"] });
+    await useCoachingStore.getState().generate();
+
+    expect(commands.searchSiteReplays).toHaveBeenCalledWith(url, 3);
+    expect(commands.buildPlayerAggregate).toHaveBeenCalledWith("epic:me", ["c", "a", "b"], ["steam:old"]);
+    expect(useCoachingStore.getState().status).toBe("done");
   });
 
   it("explains when ballchasing has no games for the player", async () => {

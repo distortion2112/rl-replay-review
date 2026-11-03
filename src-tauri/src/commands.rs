@@ -8,7 +8,8 @@ use crate::api::ballchasing::BallchasingClient;
 use crate::benchmark::{self, Benchmarks, RankLookup};
 use crate::coaching::{self, CoachingReport, EvidencePack};
 use crate::profile::{self, PlayerAggregate, PlaystyleProfile, Skipped};
-use crate::api::models::{PlayerData, ReplayData, ReplayListResponse, ReplaySearchParams};
+use crate::api::ballchasing::{parse_site_search, search_identities, site_search_url};
+use crate::api::models::{PlayerData, ReplayData, ReplayListResponse, ReplaySearchParams, SiteSearchResult};
 use crate::api::rate_limit::{RateLimitStatus, RateLimiter};
 use crate::analysis::boost::{analyze_boost, BoostInsight};
 use crate::analysis::rotation::{analyze_rotation, RotationInsight};
@@ -130,6 +131,29 @@ pub async fn search_player_replays(
     client.search_replays(&params).await
 }
 
+/// Replays from a search pasted from the ballchasing.com site (ranked 2v2 only,
+/// newest first, up to `count`), and every id that appears under the searched
+/// name, so the user can confirm which are theirs.
+#[tauri::command]
+pub async fn search_site_replays(
+    app: tauri::AppHandle,
+    rate_limiter: State<'_, RateLimiter>,
+    url: String,
+    count: u32,
+) -> Result<SiteSearchResult, String> {
+    let search = parse_site_search(&url)?;
+    let store = app.store("settings.json").map_err(|e| e.to_string())?;
+    let api_key = store
+        .get("api_key")
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+        .ok_or("No API key configured.")?;
+    let client = BallchasingClient::new(api_key, (*rate_limiter).clone());
+    let count = count.clamp(1, 1000);
+    let replays = client.search_pages(site_search_url(&search, count.min(200))?, count as usize).await?;
+    let identities = search_identities(&replays, &search);
+    Ok(SiteSearchResult { replays, identities, ignored: search.ignored })
+}
+
 #[tauri::command]
 pub fn analyze_replay_rotation(players: Vec<PlayerData>) -> Vec<RotationInsight> {
     analyze_rotation(&players)
@@ -186,7 +210,8 @@ struct AggregateProgress {
     replay_id: String,
 }
 
-/// Builds a player's per-game stats across `replay_ids`, cache-first.
+/// Builds a player's per-game stats across `replay_ids`, cache-first, counting
+/// games under `aliases` (other ids the user confirmed are theirs) as the player's.
 /// Emits `aggregate-progress` as each replay is processed. Replays that fail
 /// to fetch or don't contain a full game for the player end up in `skipped`.
 #[tauri::command]
@@ -196,6 +221,7 @@ pub async fn build_player_aggregate(
     cache: State<'_, RawReplayCache>,
     player_id: String,
     replay_ids: Vec<String>,
+    aliases: Option<Vec<String>>,
 ) -> Result<PlayerAggregate, String> {
     let store = app.store("settings.json").map_err(|e| e.to_string())?;
     let api_key = store
@@ -227,7 +253,7 @@ pub async fn build_player_aggregate(
         details.extend(detail);
         let _ = app.emit("aggregate-progress", AggregateProgress { current: i + 1, total, replay_id: id.clone() });
     }
-    let mut aggregate = PlayerAggregate::from_details(&player_id, details.iter());
+    let mut aggregate = PlayerAggregate::from_details_with_aliases(&player_id, &aliases.unwrap_or_default(), details.iter());
     aggregate.skipped.extend(fetch_errors);
     Ok(aggregate)
 }
