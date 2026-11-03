@@ -22,6 +22,10 @@ const EXCLUDED: &[(&str, &str)] = &[
     ("core_score", "in-game score is a composite of other stats"),
     ("movement_avg_speed_percentage", "duplicate of movement_avg_speed"),
     ("core_mvp", "a game outcome, not a stat"),
+    // Opponent-driven: these rise with rank because games get faster, so the
+    // rank signal would call *fewer* shots or goals against a weakness.
+    ("core_shots_against", "driven by opponents and game pace, not the player"),
+    ("core_goals_against", "driven by opponents and team play, not the player"),
 ];
 
 /// Stats where the rank-signal direction is the wrong guide to "better".
