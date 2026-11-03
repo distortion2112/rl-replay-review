@@ -1,0 +1,270 @@
+<!doctype html>
+<!--
+  Source for the README graphics in docs/images/.
+  Re-render with: node docs/images/src/render.js
+  Each <section class="shot" id="..."> becomes docs/images/<id>.png.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --bg: #0b1220; --panel: #121b2e; --panel-2: #172238; --line: #24324d;
+    --text: #e8eef9; --muted: #93a3bf; --dim: #61718f;
+    --blue: #3b8cff; --orange: #ff8a2a; --green: #3ccf91; --red: #ff5d6c;
+    --f22: #3b8cff; --f24: #ff8a2a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #000; font-family: "Inter", sans-serif; -webkit-font-smoothing: antialiased; color: var(--text); }
+  .shot { width: 1600px; background: var(--bg); padding: 56px 64px 48px; margin-bottom: 40px; }
+  .eyebrow { font-size: 15px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--orange); font-weight: 600; margin-bottom: 14px; }
+  h1 { font-family: "Inter Display", "Inter", sans-serif; font-size: 58px; line-height: 1.02; font-weight: 800; letter-spacing: -0.03em; }
+  h1 span { color: var(--orange); }
+  .lede { margin-top: 16px; font-size: 21px; line-height: 1.45; color: var(--muted); max-width: 1100px; }
+  .lede b { color: var(--text); font-weight: 600; }
+
+  .chip { display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 5px 9px; border-radius: 6px; white-space: nowrap; }
+  .chip.built { background: rgba(60,207,145,0.15); color: var(--green); }
+  .chip.prog { background: rgba(255,138,42,0.16); color: var(--orange); }
+  .chip.plan { background: rgba(147,163,191,0.12); color: var(--muted); }
+
+  .legend { display: flex; gap: 22px; font-size: 15px; color: var(--muted); }
+  .legend i { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 7px; vertical-align: -1px; }
+
+  /* ---------- overview ---------- */
+  .pipeline { margin-top: 38px; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 32px 28px 26px; }
+  .stages { display: grid; grid-template-columns: repeat(7, 1fr); position: relative; }
+  .rail { position: absolute; top: 21px; left: 32px; right: calc(100% / 7 - 32px); height: 2px;
+          background: linear-gradient(90deg, var(--green) 0%, var(--orange) 17%, var(--muted) 34%, var(--green) 45%, var(--green) 83%, var(--muted) 100%); opacity: 0.55; }
+  .stage { padding: 0 12px 0 10px; position: relative; }
+  .dot { width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 18px; position: relative; z-index: 2; background: var(--panel-2); border: 2px solid var(--muted); color: var(--muted); }
+  .stage.built .dot { border-color: var(--green); color: var(--green); background: #0e2a20; }
+  .stage.prog .dot { border-color: var(--orange); color: var(--orange); background: #2a1a0e; }
+  .stage h4 { font-size: 19px; font-weight: 700; margin: 16px 0 7px; line-height: 1.2; }
+  .stage p { font-size: 15px; line-height: 1.45; color: var(--muted); min-height: 88px; }
+  .stage .chip { margin-top: 12px; }
+  .ref { font-size: 13px; color: var(--dim); margin-top: 8px; }
+  .zones { display: grid; grid-template-columns: 4fr 1fr 1fr 1fr; gap: 12px; margin-top: 24px; }
+  .zone { border-radius: 10px; padding: 13px 16px; font-size: 15px; line-height: 1.4; }
+  .zone b { display: block; font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 3px; }
+  .zone.det { background: rgba(59,140,255,0.13); color: #c4dcff; }
+  .zone.det b { color: var(--blue); }
+  .zone.ai { background: rgba(255,138,42,0.12); color: #ffd9b8; grid-column: span 3; }
+  .zone.ai b { color: var(--orange); }
+  .today { margin-top: 18px; display: flex; justify-content: space-between; align-items: center; font-size: 16px; color: var(--muted); }
+  .today b { color: var(--text); }
+
+  /* ---------- roadmap ---------- */
+  .road { margin-top: 40px; display: grid; grid-template-columns: repeat(6, 1fr); gap: 14px; position: relative; }
+  .rcard { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 22px 20px 20px; position: relative; display: flex; flex-direction: column; }
+  .rcard.built { border-color: rgba(60,207,145,0.35); }
+  .rcard.prog { border: 2px solid var(--orange); background: linear-gradient(160deg, #1f1710 0%, var(--panel) 70%); }
+  .rcard .num { font-family: "Inter Display", "Inter", sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
+  .rcard h3 { font-family: "Inter Display", "Inter", sans-serif; font-size: 25px; line-height: 1.12; font-weight: 800; letter-spacing: -0.01em; margin: 8px 0 12px; min-height: 56px; }
+  .rcard ul { list-style: none; display: grid; gap: 9px; }
+  .rcard li { font-size: 15px; line-height: 1.4; color: var(--muted); padding-left: 16px; position: relative; }
+  .rcard li::before { content: ""; position: absolute; left: 0; top: 8px; width: 6px; height: 6px; border-radius: 2px; background: var(--dim); }
+  .rcard.built li::before { background: var(--green); }
+  .rcard.prog li::before { background: var(--orange); }
+  .rcard li b { color: var(--text); font-weight: 600; }
+  .rcard .foot { margin-top: auto; padding-top: 16px; }
+  .here { position: absolute; top: -34px; left: 50%; transform: translateX(-50%); font-size: 13px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--orange); white-space: nowrap; }
+  .here::after { content: ""; position: absolute; left: 50%; top: 20px; transform: translateX(-50%); border: 6px solid transparent; border-top-color: var(--orange); }
+  .progress { margin-top: 30px; height: 10px; border-radius: 5px; background: var(--panel-2); position: relative; overflow: hidden; }
+  .progress .fill { position: absolute; left: 0; top: 0; bottom: 0; width: 58%; background: linear-gradient(90deg, var(--green) 0%, var(--green) 85%, var(--orange) 100%); }
+  .rfoot { margin-top: 18px; display: flex; justify-content: space-between; font-size: 15px; color: var(--dim); }
+
+  /* ---------- data coverage ---------- */
+  .twocol { margin-top: 36px; display: grid; grid-template-columns: 1fr; gap: 22px; }
+  .box { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 24px 26px; }
+  .box h3 { font-size: 15px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); font-weight: 700; margin-bottom: 18px; }
+  .seasons { display: grid; grid-template-columns: 1.6fr 1.6fr 1fr 1fr; gap: 12px; }
+  .season { border-radius: 12px; padding: 16px 18px; background: var(--panel-2); }
+  .season .s { font-size: 14px; color: var(--muted); font-weight: 600; }
+  .season .v { font-size: 26px; font-weight: 800; margin-top: 6px; letter-spacing: -0.01em; }
+  .season .d { font-size: 15px; color: var(--muted); margin-top: 4px; line-height: 1.4; }
+  .season.ok { border-left: 4px solid var(--green); }
+  .season.ok .v { color: var(--green); }
+  .season.cut { border-left: 4px solid var(--orange); }
+  .season.cut .v { color: var(--orange); }
+  .season.none { border-left: 4px solid var(--red); }
+  .season.none .v { color: var(--red); }
+  .tiers { display: grid; grid-template-columns: repeat(22, 1fr); gap: 5px; }
+  .tier { text-align: center; }
+  .tier .cell { height: 74px; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 15px; color: #0b1220; }
+  .tier.f22 .cell { background: var(--f22); }
+  .tier.f24 .cell { background: var(--f24); }
+  .tier.low .cell { background: repeating-linear-gradient(135deg, var(--f22) 0 6px, #1f4a8a 6px 12px); }
+  .tier .n { font-size: 13px; color: var(--muted); margin-top: 7px; }
+  .groups { display: grid; grid-template-columns: repeat(22, 1fr); gap: 5px; margin-top: 10px; }
+  .grp { grid-column: span 3; border-top: 2px solid var(--line); padding-top: 6px; font-size: 13px; color: var(--dim); text-align: center; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600; }
+  .grp.one { grid-column: span 1; }
+  .notes { margin-top: 20px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .note { font-size: 15px; line-height: 1.45; color: var(--muted); background: var(--panel-2); border-radius: 10px; padding: 12px 14px; }
+  .note b { color: var(--text); }
+</style>
+</head>
+<body>
+
+<!-- =================== OVERVIEW =================== -->
+<section class="shot" id="overview">
+  <div class="eyebrow">RL Replay Review &middot; How it works</div>
+  <h1>Coaching that <span>shows its work.</span></h1>
+  <p class="lede">A desktop app that reads your Rocket League replays, compares you with players at your rank and the rank above, and finds the <b>few habits actually holding you back</b>. Every number is computed by code and checked before you see it.</p>
+
+  <div class="pipeline">
+    <div class="stages">
+      <div class="rail"></div>
+      <div class="stage built"><div class="dot">1</div><h4>Frame capture</h4><p>Ball and car position, rotation, velocity, inputs, touches, demos. About 30 times a second.</p><span class="chip built">Built</span></div>
+      <div class="stage prog"><div class="dot">2</div><h4>Event engine</h4><p>Goals and who scored, shots, 50/50s, possession, rotations, goals conceded.</p><span class="chip prog">In progress</span><div class="ref">#59, #78</div></div>
+      <div class="stage"><div class="dot">3</div><h4>Outcome value</h4><p>Expected goals and possession value: what each decision cost or earned.</p><span class="chip plan">Planned</span></div>
+      <div class="stage built"><div class="dot">4</div><h4>Rank benchmarks</h4><p>22 ranked-doubles tiers. Learns which stats actually separate one rank from the next.</p><span class="chip built">Built</span><div class="ref">#5, #49</div></div>
+      <div class="stage built"><div class="dot">5</div><h4>Evidence pack</h4><p>Your top gaps and strengths, with confidence ranges and percentiles at two tiers.</p><span class="chip built">Built</span><div class="ref">#10, #53</div></div>
+      <div class="stage built"><div class="dot">6</div><h4>Coach + verifier</h4><p>Plain-English report. A checker rejects any number or rank not in the evidence.</p><span class="chip built">Built</span><div class="ref">AI narrator next, #11</div></div>
+      <div class="stage"><div class="dot">7</div><h4>Track progress</h4><p>Did the habit you worked on improve over your next games?</p><span class="chip plan">Planned</span></div>
+    </div>
+    <div class="zones">
+      <div class="zone det"><b>Deterministic and testable</b>Steps 1 to 5 are plain code with tests. Parser output is checked against ballchasing.com's own stats.</div>
+      <div class="zone ai"><b>AI explains, never invents</b>Optional. Every claim must cite the evidence pack.</div>
+    </div>
+  </div>
+  <div class="today">
+    <span><b>Today:</b> the coaching report runs on ballchasing match stats. Frame-level moments (steps 2 and 3) plug into the same evidence pack as they land.</span>
+    <span class="legend"><span><i style="background:var(--green)"></i>Built</span><span><i style="background:var(--orange)"></i>In progress</span><span><i style="background:var(--muted)"></i>Planned</span></span>
+  </div>
+</section>
+
+<!-- =================== ROADMAP =================== -->
+<section class="shot" id="roadmap">
+  <div class="eyebrow">RL Replay Review &middot; Roadmap &middot; November 2026</div>
+  <h1>From replay viewer to <span>personal coach.</span></h1>
+  <p class="lede">The first coaching report is built and working. The current focus is coaching from the game film: naming the moments that cost games, not just the averages.</p>
+
+  <div class="road" style="margin-top:58px">
+    <div class="rcard built">
+      <div class="num">Base</div>
+      <h3>Replay viewer</h3>
+      <ul>
+        <li>2D match playback at real speed</li>
+        <li>Heatmaps, trails, boost charts</li>
+        <li>Full car and ball detail, touches and demos</li>
+      </ul>
+      <div class="foot"><span class="chip built">Built</span></div>
+    </div>
+    <div class="rcard built">
+      <div class="num">Stage 1</div>
+      <h3>Know the player</h3>
+      <ul>
+        <li>Pulls your games by player ID or name search</li>
+        <li>Five-axis playstyle with confidence bands</li>
+        <li><b>Rank is picked by hand</b> (see Problems)</li>
+      </ul>
+      <div class="foot"><span class="chip built">Built</span></div>
+    </div>
+    <div class="rcard built">
+      <div class="num">Stage 2</div>
+      <h3>Know what good looks like</h3>
+      <ul>
+        <li>Benchmarks for all 22 ranked-doubles tiers</li>
+        <li>Champion to Grand Champion from the current season</li>
+        <li>Other tiers from Season 22 until more data exists</li>
+      </ul>
+      <div class="foot"><span class="chip built">Built, with gaps</span></div>
+    </div>
+    <div class="rcard built">
+      <div class="num">Stage 3</div>
+      <h3>First coaching report</h3>
+      <ul>
+        <li>Coaching tab: top gaps and strengths</li>
+        <li>Compared to your rank and the one above</li>
+        <li>Every number verified. <b>Next:</b> optional AI narrator</li>
+      </ul>
+      <div class="foot"><span class="chip built">Built</span></div>
+    </div>
+    <div class="rcard prog">
+      <span class="here">You are here</span>
+      <div class="num">Stage 4</div>
+      <h3>Coaching from the game film</h3>
+      <ul>
+        <li>Who scored, shots, contested touches (PR #78)</li>
+        <li>Goals conceded, 50/50s, open nets, positioning</li>
+        <li>Key moments list with clips to watch</li>
+      </ul>
+      <div class="foot"><span class="chip prog">In progress &middot; #59</span></div>
+    </div>
+    <div class="rcard">
+      <div class="num">Stage 5</div>
+      <h3>Close the loop</h3>
+      <ul>
+        <li>Tracks the habit you're working on</li>
+        <li>Shows whether you're improving</li>
+        <li>Learns which advice actually works</li>
+      </ul>
+      <div class="foot"><span class="chip plan">Planned</span></div>
+    </div>
+  </div>
+  <div class="progress"><div class="fill"></div></div>
+  <div class="rfoot">
+    <span>Details: epic #31 (architecture) and epic #59 (moment-based coaching)</span>
+    <span class="legend"><span><i style="background:var(--green)"></i>Built</span><span><i style="background:var(--orange)"></i>In progress</span><span><i style="background:var(--muted)"></i>Planned</span></span>
+  </div>
+</section>
+
+<!-- =================== DATA COVERAGE =================== -->
+<section class="shot" id="rank-data">
+  <div class="eyebrow">Biggest problem so far</div>
+  <h1>ballchasing stopped <span>publishing ranks.</span></h1>
+  <p class="lede">Benchmarks need to know each player's rank. Around June 5, 2026, ballchasing.com stopped attaching ranks to replays, and no working rank API was found. So the benchmarks are stitched together from two sources.</p>
+
+  <div class="twocol">
+    <div class="box">
+      <h3>Ranked-doubles replays with player ranks on ballchasing</h3>
+      <div class="seasons">
+        <div class="season ok"><div class="s">Seasons 18 to 21</div><div class="v">Plenty</div><div class="d">Rank-tagged replays widely available</div></div>
+        <div class="season cut"><div class="s">Season 22</div><div class="v">Until June 5, 2026</div><div class="d">Newest season with ranks. Used as the base.</div></div>
+        <div class="season none"><div class="s">Season 23</div><div class="v">0</div><div class="d">No ranks at all</div></div>
+        <div class="season none"><div class="s">Season 24 (current)</div><div class="v">8</div><div class="d">All on one day</div></div>
+      </div>
+    </div>
+
+    <div class="box">
+      <h3>Where each tier's benchmark comes from (player-game rows under each tier)</h3>
+      <div class="tiers">
+        <div class="tier f22"><div class="cell">B1</div><div class="n">94</div></div>
+        <div class="tier f22 low"><div class="cell">B2</div><div class="n">11</div></div>
+        <div class="tier f22 low"><div class="cell">B3</div><div class="n">15</div></div>
+        <div class="tier f22 low"><div class="cell">S1</div><div class="n">13</div></div>
+        <div class="tier f22"><div class="cell">S2</div><div class="n">73</div></div>
+        <div class="tier f22"><div class="cell">S3</div><div class="n">82</div></div>
+        <div class="tier f22"><div class="cell">G1</div><div class="n">113</div></div>
+        <div class="tier f22"><div class="cell">G2</div><div class="n">330</div></div>
+        <div class="tier f22"><div class="cell">G3</div><div class="n">335</div></div>
+        <div class="tier f22"><div class="cell">P1</div><div class="n">491</div></div>
+        <div class="tier f22"><div class="cell">P2</div><div class="n">390</div></div>
+        <div class="tier f22"><div class="cell">P3</div><div class="n">457</div></div>
+        <div class="tier f22"><div class="cell">D1</div><div class="n">475</div></div>
+        <div class="tier f22"><div class="cell">D2</div><div class="n">448</div></div>
+        <div class="tier f22"><div class="cell">D3</div><div class="n">470</div></div>
+        <div class="tier f24"><div class="cell">C1</div><div class="n">320</div></div>
+        <div class="tier f24"><div class="cell">C2</div><div class="n">166</div></div>
+        <div class="tier f24"><div class="cell">C3</div><div class="n">306</div></div>
+        <div class="tier f24"><div class="cell">GC1</div><div class="n">214</div></div>
+        <div class="tier f24"><div class="cell">GC2</div><div class="n">245</div></div>
+        <div class="tier f24"><div class="cell">GC3</div><div class="n">248</div></div>
+        <div class="tier f22"><div class="cell">SSL</div><div class="n">286</div></div>
+      </div>
+      <div class="groups">
+        <div class="grp">Bronze</div><div class="grp">Silver</div><div class="grp">Gold</div><div class="grp">Platinum</div>
+        <div class="grp">Diamond</div><div class="grp">Champion</div><div class="grp">Grand Champ</div><div class="grp one">SSL</div>
+      </div>
+      <div class="notes">
+        <div class="note"><span class="legend" style="display:inline"><i style="background:var(--f22)"></i></span><b>Season 22, real ranks.</b> Accurate labels, but a few months old. The skill ceiling keeps moving.</div>
+        <div class="note"><span class="legend" style="display:inline"><i style="background:var(--f24)"></i></span><b>Season 24, hand-checked anchors.</b> 47 players' ranks looked up by hand on tracker.gg. Their games label them and their teammates. Tested on Season 22: usable from Diamond up.</div>
+        <div class="note"><span class="legend" style="display:inline"><i style="background:repeating-linear-gradient(135deg, var(--f22) 0 3px, #1f4a8a 3px 6px)"></i></span><b>Thin samples.</b> Fewer than 30 rows. Few lobbies are all Bronze or Silver, and anchors don't work there (smurfs, placements).</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+</body>
+</html>
