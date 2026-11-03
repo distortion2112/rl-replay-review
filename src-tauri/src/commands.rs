@@ -4,7 +4,7 @@ use tauri::State;
 use tauri_plugin_store::StoreExt;
 
 use crate::api::ballchasing::BallchasingClient;
-use crate::api::models::{PlayerData, ReplayData};
+use crate::api::models::{PlayerData, ReplayData, ReplayListResponse, ReplaySearchParams};
 use crate::api::rate_limit::{RateLimitStatus, RateLimiter};
 use crate::analysis::boost::{analyze_boost, BoostInsight};
 use crate::analysis::rotation::{analyze_rotation, RotationInsight};
@@ -102,6 +102,22 @@ pub async fn get_rate_limit_status(
     rate_limiter: State<'_, RateLimiter>,
 ) -> Result<RateLimitStatus, String> {
     Ok(rate_limiter.status().await)
+}
+
+#[tauri::command]
+pub async fn search_player_replays(
+    app: tauri::AppHandle,
+    rate_limiter: State<'_, RateLimiter>,
+    params: ReplaySearchParams,
+) -> Result<ReplayListResponse, String> {
+    let store = app.store("settings.json").map_err(|e| e.to_string())?;
+    let api_key = store
+        .get("api_key")
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+        .ok_or("No API key configured.")?;
+
+    let client = BallchasingClient::new(api_key, (*rate_limiter).clone());
+    client.search_replays(&params, &store).await
 }
 
 #[tauri::command]

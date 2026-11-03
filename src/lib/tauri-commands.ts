@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { ReplayData, PlayerData } from "../types/replay";
+import type { ReplayData, PlayerData, ReplayListResponse, ReplaySearchParams } from "../types/replay";
 import type { RotationInsight, BoostInsight, RateLimitStatus } from "../types/analysis";
 import type { FrameData } from "../types/frames";
 
@@ -31,6 +31,12 @@ export async function downloadAndParseReplay(
   replayId: string
 ): Promise<FrameData> {
   return invoke("download_and_parse_replay", { replayId });
+}
+
+export async function searchPlayerReplays(
+  params: ReplaySearchParams
+): Promise<ReplayListResponse> {
+  return invoke("search_player_replays", { params });
 }
 
 export async function getRateLimitStatus(): Promise<RateLimitStatus> {

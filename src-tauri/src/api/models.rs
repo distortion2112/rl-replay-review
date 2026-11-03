@@ -158,3 +158,49 @@ pub struct DemoStats {
     pub inflicted: Option<u32>,
     pub taken: Option<u32>,
 }
+
+// --- Replay search/list types ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReplayListResponse {
+    pub list: Vec<ReplayListItem>,
+    pub count: Option<u32>,
+    pub next: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReplayListItem {
+    pub id: String,
+    pub date: Option<String>,
+    pub playlist_id: Option<String>,
+    pub playlist_name: Option<String>,
+    pub duration: Option<u32>,
+    pub overtime: Option<bool>,
+    pub overtime_seconds: Option<u32>,
+    pub map_code: Option<String>,
+    pub map_name: Option<String>,
+    pub min_rank: Option<RankInfo>,
+    pub max_rank: Option<RankInfo>,
+    pub season: Option<u32>,
+    pub replay_title: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RankInfo {
+    pub id: Option<String>,
+    pub tier: Option<u32>,
+    pub division: Option<u32>,
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReplaySearchParams {
+    pub player_id: Option<String>,
+    pub playlist: Option<String>,
+    /// `1`-`14` for legacy seasons, `f1`, `f2`, ... for free-to-play seasons.
+    pub season: Option<String>,
+    pub count: Option<u32>,
+    pub sort_by: Option<String>,
+    pub sort_dir: Option<String>,
+    pub next: Option<String>,
+}
