@@ -11,6 +11,7 @@ about Diamond up.
              tiers, and write a CSV to fill in with looked-up ranks
   lookup     Walk the CSV: open each tracker link in your browser, type the rank
   import     Load the filled-in CSV as anchors (rank_source 'manual')
+  collect    Fetch each manual anchor's games from the days before its lookup
 """
 
 from __future__ import annotations
@@ -379,6 +380,81 @@ def cmd_import(args) -> None:
         sys.exit(1)
 
 
+# --- collect + labeling ------------------------------------------------------
+
+def manual_anchors(store: Store, season: int) -> dict[str, tuple[int, str]]:
+    return {
+        player: (steps, as_of)
+        for player, steps, as_of in store.db.execute(
+            "SELECT player, rank_steps, as_of FROM anchors WHERE season = ? AND rank_source = 'manual'", (season,)
+        )
+    }
+
+
+def cmd_collect(args) -> None:
+    store = Store(Path(args.db))
+    api = Ballchasing(load_api_key())
+    snum = season_number(args.season)
+    anchors = manual_anchors(store, snum)
+    if not anchors:
+        sys.exit(f"No manual anchors for {args.season}: run lookup + import first")
+    for n, (player, (_, as_of)) in enumerate(sorted(anchors.items()), 1):
+        source = f"manual:{player}"
+        if store.count_by_source(snum).get(source):
+            continue
+        # Rank was read on `as_of`; label only games before it (plus that day)
+        until = datetime.fromisoformat(as_of).replace(tzinfo=timezone.utc) + timedelta(days=1)
+        page = api.list_replays(
+            playlist=PLAYLIST, season=args.season, player_id=player, count=200,
+            sort_by="replay-date", sort_dir="desc",
+            replay_date_after=(until - timedelta(days=args.days + 1)).isoformat(),
+            replay_date_before=until.isoformat(),
+        )
+        for item in page.get("list", [])[: args.max_games]:
+            store.queue(item["id"], snum, item["date"], source)
+        store.commit()
+        if n % 10 == 0:
+            log(f"  listed {n}/{len(anchors)} anchors")
+    fetch_pending(api, store, snum, None)
+    counts = {p: store.count_by_source(snum).get(f"manual:{p}", (0, 0))[1] for p in anchors}
+    log(f"anchor games: {sum(counts.values())} across {sum(1 for c in counts.values() if c)} anchors "
+        f"(median {statistics.median(counts.values()):.0f} per anchor)")
+
+
+def anchors_with_games(store: Store, season: int) -> dict[int, int]:
+    """Tier index -> number of manual anchors that have fetched games."""
+    counts: dict[int, int] = collections.Counter()
+    for player, (steps, _) in manual_anchors(store, season).items():
+        if store.count_by_source(season).get(f"manual:{player}", (0, 0))[1]:
+            counts[steps // 4] += 1
+    return counts
+
+
+def labeled_rows(store: Store, season: int, scope: str):
+    """Yields (row, label_steps) from manual anchors' games.
+
+    scope: 'anchor' = the anchor's own rows; 'team' = plus their teammate;
+    'lobby' = everyone. f22 test: teammates 83% within 1 tier, opponents 73%.
+    """
+    anchors = manual_anchors(store, season)
+    seen: set[tuple[str, str]] = set()
+    for player, (steps, _) in anchors.items():
+        ids = [r[0] for r in store.db.execute(
+            "SELECT id FROM replays WHERE source = ? AND detail IS NOT NULL", (f"manual:{player}",)
+        )]
+        for rid, detail in store.details(ids=ids):
+            rows = player_rows(detail)
+            me = next((r for r in rows if r.player == player), None)
+            if me is None:
+                continue
+            for r in rows:
+                include = r is me or (scope == "team" and r.team == me.team) or scope == "lobby"
+                if not include or not r.full_game or (rid, r.player) in seen:
+                    continue
+                seen.add((rid, r.player))
+                yield r, steps
+
+
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--db", default=str(DEFAULT_DB))
@@ -407,8 +483,14 @@ def main(argv: list[str] | None = None) -> None:
     i = sub.add_parser("import", help="Load a filled-in candidates CSV as manual anchors")
     i.add_argument("csv")
 
+    co = sub.add_parser("collect", help="Fetch manual anchors' games from the days before their lookup")
+    co.add_argument("--season", required=True)
+    co.add_argument("--days", type=int, default=14)
+    co.add_argument("--max-games", type=int, default=30)
+
     args = p.parse_args(argv)
-    {"validate": cmd_validate, "candidates": cmd_candidates, "lookup": cmd_lookup, "import": cmd_import}[args.cmd](args)
+    {"validate": cmd_validate, "candidates": cmd_candidates, "lookup": cmd_lookup, "import": cmd_import,
+     "collect": cmd_collect}[args.cmd](args)
 
 
 if __name__ == "__main__":

@@ -156,3 +156,20 @@ class Anchors(unittest.TestCase):
         self.assertIn("/psn/", tracker_url("ps4", "1", "n"))
         self.assertIn("/xbl/", tracker_url("xbox", "1", "n"))
         self.assertEqual(tracker_url("psynet", "1", "n"), "")
+
+    def test_labeled_rows_scopes(self):
+        import tempfile
+        from pathlib import Path
+        from anchors import labeled_rows
+        from collector import Store
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d) / "t.sqlite")
+            store.queue("r1", 24, "2026-11-01T00:00:00Z", "manual:epic:p1")
+            store.save_detail("r1", detail())
+            store.db.execute("INSERT INTO anchors VALUES (24, 'epic:p1', 66, 'manual', '2026-11-02')")
+            store.commit()
+            pick = lambda scope: sorted(r.player for r, steps in labeled_rows(store, 24, scope) if steps == 66)
+            self.assertEqual(pick("anchor"), ["epic:p1"])
+            self.assertEqual(pick("team"), ["epic:p1", "epic:p2"])
+            # p4 joined late (not a full game), so the lobby has 3 labeled rows
+            self.assertEqual(pick("lobby"), ["epic:p1", "epic:p2", "epic:p3"])
