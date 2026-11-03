@@ -40,6 +40,11 @@ export interface RankBenchmark {
   games: number;
   /** fewer than 30 rows: show with low confidence */
   low_sample: boolean;
+  /** season this tier's rows come from (tiers can mix seasons), e.g. "f24" */
+  season?: string | null;
+  /** how ranks were known: ballchasing per-player ranks or manual anchors */
+  rank_source?: string | null;
+  /** may lack stats other tiers have: newer seasons report stats older ones don't */
   stats: Record<string, StatDistribution>;
 }
 
