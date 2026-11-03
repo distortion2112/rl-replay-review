@@ -1,9 +1,11 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
-use tauri::State;
+use tauri::path::BaseDirectory;
+use tauri::{Manager, State};
 use tauri_plugin_store::StoreExt;
 
 use crate::api::ballchasing::BallchasingClient;
+use crate::benchmark::{self, Benchmarks, RankLookup};
 use crate::api::models::{PlayerData, ReplayData, ReplayListResponse, ReplaySearchParams};
 use crate::api::rate_limit::{RateLimitStatus, RateLimiter};
 use crate::analysis::boost::{analyze_boost, BoostInsight};
@@ -134,4 +136,39 @@ pub fn analyze_replay_rotation(players: Vec<PlayerData>) -> Vec<RotationInsight>
 #[tauri::command]
 pub fn analyze_replay_boost(players: Vec<PlayerData>) -> Vec<BoostInsight> {
     analyze_boost(&players)
+}
+
+/// Parsed `benchmarks.json`, loaded on first use.
+#[derive(Default)]
+pub struct BenchmarkCache(pub Mutex<Option<std::sync::Arc<Benchmarks>>>);
+
+fn load_benchmarks(app: &tauri::AppHandle, cache: &BenchmarkCache) -> Result<std::sync::Arc<Benchmarks>, String> {
+    if let Ok(guard) = cache.0.lock()
+        && let Some(data) = guard.as_ref()
+    {
+        return Ok(data.clone());
+    }
+    let path = app
+        .path()
+        .resolve("resources/benchmarks.json", BaseDirectory::Resource)
+        .map_err(|e| format!("Benchmarks file not found: {}", e))?;
+    let json = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Couldn't read benchmarks file {}: {}", path.display(), e))?;
+    let data = std::sync::Arc::new(benchmark::parse(&json)?);
+    if let Ok(mut guard) = cache.0.lock() {
+        *guard = Some(data.clone());
+    }
+    Ok(data)
+}
+
+/// Benchmark for a ballchasing rank id (e.g. `diamond-2`), with the nearest tiers
+/// below and above. Falls back to the nearest tier with data and says so.
+#[tauri::command]
+pub fn get_rank_benchmark(
+    app: tauri::AppHandle,
+    cache: State<'_, BenchmarkCache>,
+    rank: String,
+) -> Result<RankLookup, String> {
+    let data = load_benchmarks(&app, &cache)?;
+    benchmark::lookup(&data, &rank)
 }

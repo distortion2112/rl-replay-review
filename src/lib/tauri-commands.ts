@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { ReplayData, PlayerData, ReplayListResponse, ReplaySearchParams } from "../types/replay";
 import type { RotationInsight, BoostInsight, RateLimitStatus } from "../types/analysis";
 import type { FrameData } from "../types/frames";
+import type { RankLookup } from "../types/benchmark";
 
 export async function fetchReplay(replayId: string): Promise<ReplayData> {
   return invoke("fetch_replay", { replayId });
@@ -37,6 +38,11 @@ export async function searchPlayerReplays(
   params: ReplaySearchParams
 ): Promise<ReplayListResponse> {
   return invoke("search_player_replays", { params });
+}
+
+/** Benchmark for a ballchasing rank id (e.g. "diamond-2"), plus the nearest tiers around it. */
+export async function getRankBenchmark(rank: string): Promise<RankLookup> {
+  return invoke("get_rank_benchmark", { rank });
 }
 
 export async function getRateLimitStatus(): Promise<RateLimitStatus> {
