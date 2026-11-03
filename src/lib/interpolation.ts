@@ -47,5 +47,5 @@ export function interpolateFrame(frames: GameFrame[], index: number, time: numbe
     return { ...pa, position: lerpPosition(pa.position, pb.position, t, dt) };
   });
 
-  return { time, ball, players };
+  return { ...a, time, ball, players };
 }
