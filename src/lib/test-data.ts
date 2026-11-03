@@ -73,8 +73,8 @@ export function generateTestFrameData(): FrameData {
     players,
     frames,
     goals: [
-      { frame: 300, time: 10 },
-      { frame: 900, time: 30 },
+      { frame: 300, time: 10, scoring_team: 0, scorer_index: 0, ball_position: null, last_touches: [] },
+      { frame: 900, time: 30, scoring_team: 1, scorer_index: 1, ball_position: null, last_touches: [] },
     ],
     duration_seconds: totalSeconds,
     total_frames: frames.length,

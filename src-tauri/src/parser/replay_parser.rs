@@ -80,12 +80,58 @@ pub fn parse_replay(data: &[u8]) -> Result<FrameData, String> {
         find_object_id(objects, "Archetypes.CarComponents.CarComponent_DoubleJump");
     let dodge_archetype = find_object_id(objects, "Archetypes.CarComponents.CarComponent_Dodge");
 
-    let mut goals: Vec<GoalEvent> = Vec::new();
-    for tick in &replay.tick_marks {
-        if tick.description.contains("Goal") {
-            goals.push(GoalEvent { frame: tick.frame as usize, time: 0.0 });
+    // Extract goal metadata from header (has scorer name and team)
+    let mut header_goals: Vec<(usize, Option<String>, Option<u8>)> = Vec::new();
+    if let Some(HeaderProp::Array(goal_props)) =
+        replay.properties.iter().find(|(k, _)| k == "Goals").map(|(_, v)| v)
+    {
+        for g in goal_props {
+            let frame = g.iter().find_map(|(k, v)| match (k.as_str(), v) {
+                ("frame", HeaderProp::Int(f)) => Some(*f as usize),
+                _ => None,
+            });
+            let player_name = g.iter().find_map(|(k, v)| match (k.as_str(), v) {
+                ("PlayerName", HeaderProp::Str(s)) => Some(s.clone()),
+                _ => None,
+            });
+            let player_team = g.iter().find_map(|(k, v)| match (k.as_str(), v) {
+                ("PlayerTeam", HeaderProp::Int(t)) => Some(*t as u8),
+                _ => None,
+            });
+            if let Some(frame) = frame {
+                header_goals.push((frame, player_name, player_team));
+            }
         }
     }
+
+    // Fall back to tick marks if no header goals
+    let mut goals: Vec<GoalEvent> = if !header_goals.is_empty() {
+        header_goals.iter().map(|(frame, player_name, player_team)| {
+            let scorer_index = player_name.as_ref().and_then(|name| {
+                header_players.iter().find(|p| p.name == *name).map(|p| p.index)
+            });
+            GoalEvent {
+                frame: *frame,
+                time: 0.0,
+                scoring_team: *player_team,
+                scorer_index,
+                ball_position: None,
+                last_touches: Vec::new(),
+            }
+        }).collect()
+    } else {
+        replay.tick_marks.iter()
+            .filter(|tick| tick.description.contains("Goal"))
+            .map(|tick| GoalEvent {
+                frame: tick.frame as usize,
+                time: 0.0,
+                scoring_team: None,
+                scorer_index: None,
+                ball_position: None,
+                last_touches: Vec::new(),
+            })
+            .collect()
+    };
 
     let mut game_frames: Vec<GameFrame> = Vec::new();
     let mut actor_positions: HashMap<i32, Position> = HashMap::new();
@@ -273,32 +319,39 @@ pub fn parse_replay(data: &[u8]) -> Result<FrameData, String> {
                 (actor_positions.get(&ball_id), actor_kinematics.get(&ball_id))
             && let Some(delta) = touch_detector.observe(frame.time, ball_kin.linear_velocity)
         {
-            let nearest = alive_cars
+            let nearest_cars: Vec<(usize, u8, f32)> = alive_cars
                 .iter()
                 .filter_map(|car| {
                     let player = link.player_index(*car)?;
                     let pos = actor_positions.get(car)?;
-                    Some((player, distance(pos, ball_pos)))
+                    let team = header_players.iter().find(|p| p.index == player).map(|p| p.team).unwrap_or(0);
+                    Some((player, team, distance(pos, ball_pos)))
                 })
-                .min_by(|a, b| a.1.total_cmp(&b.1));
-            if let Some((player_index, dist)) = nearest
+                .collect();
+            let nearest = nearest_cars.iter()
+                .min_by(|a, b| a.2.total_cmp(&b.2));
+            if let Some(&(player_index, team, dist)) = nearest
                 && dist < TOUCH_MAX_DISTANCE
             {
                 let duplicate = touches.last().is_some_and(|t| {
                     t.player_index == player_index && frame.time - t.time < TOUCH_MERGE_SECONDS
                 });
                 if !duplicate {
-                    let team = header_players
-                        .iter()
-                        .find(|p| p.index == player_index)
-                        .map(|p| p.team)
-                        .unwrap_or(0);
+                    let ball_vel = ball_kin.linear_velocity;
+                    let is_shot = ball_vel.is_some_and(|v| is_shot_on_goal(ball_pos, &v));
+                    // Contested: opponent car within touch distance
+                    let contested = nearest_cars.iter().any(|(_, t, d)| {
+                        *t != team && *d < TOUCH_MAX_DISTANCE
+                    });
                     touches.push(TouchEvent {
                         frame: frame_idx,
                         time: frame.time,
                         player_index,
                         team,
                         ball_speed_delta: delta,
+                        ball_velocity: ball_vel,
+                        is_shot,
+                        contested,
                     });
                 }
             }
@@ -385,10 +438,42 @@ pub fn parse_replay(data: &[u8]) -> Result<FrameData, String> {
 
     eprintln!("Events: {} touches, {} demos, {} kickoffs", touches.len(), demos.len(), kickoffs.len());
 
-    // Fill goal times
+    // Fill goal times, ball positions, and last touches
     for goal in &mut goals {
         if goal.frame < network_frames.frames.len() {
             goal.time = network_frames.frames[goal.frame].time;
+        }
+        // Ball position at the goal frame (from the sampled frames nearest to the goal)
+        goal.ball_position = game_frames.iter()
+            .rev()
+            .find(|f| f.time <= goal.time)
+            .and_then(|f| f.ball);
+        // Last 3 touches before the goal
+        goal.last_touches = touches.iter()
+            .rev()
+            .filter(|t| t.time < goal.time)
+            .take(3)
+            .map(|t| GoalTouch {
+                player_index: t.player_index,
+                team: t.team,
+                time: t.time,
+            })
+            .collect();
+    }
+
+    // Backfill contested for touches near in time (±0.25s) to opponent touches
+    // The inline check above catches same-frame proximity; this catches temporal proximity
+    for i in 0..touches.len() {
+        if touches[i].contested {
+            continue;
+        }
+        let t_time = touches[i].time;
+        let t_team = touches[i].team;
+        let dominated = touches.iter().any(|other| {
+            other.team != t_team && (other.time - t_time).abs() < CONTESTED_TIME_WINDOW
+        });
+        if dominated {
+            touches[i].contested = true;
         }
     }
 
@@ -429,6 +514,39 @@ const TOUCH_MIN_SPEED_DELTA: f32 = 250.0;
 const TOUCH_MERGE_SECONDS: f32 = 0.1;
 /// Rocket League gravity, uu/s^2.
 const GRAVITY_Z: f32 = -650.0;
+/// Time window (seconds) for marking touches as contested (50/50).
+const CONTESTED_TIME_WINDOW: f32 = 0.25;
+
+/// Goal Y coordinates in unreal units. Blue defends negative Y, orange defends positive Y.
+const GOAL_Y_BLUE: f32 = -5120.0;
+const GOAL_Y_ORANGE: f32 = 5120.0;
+/// Half-width of the goal mouth (X axis).
+const GOAL_HALF_WIDTH: f32 = 893.0;
+/// Goal height (Z axis).
+const GOAL_HEIGHT: f32 = 642.0;
+
+/// Returns true if the ball, given its position and velocity, is heading
+/// toward either goal mouth with enough accuracy to be called a shot.
+fn is_shot_on_goal(ball_pos: &Position, ball_vel: &Position) -> bool {
+    let speed_y = ball_vel.y;
+    if speed_y.abs() < 100.0 {
+        return false; // barely moving toward either end
+    }
+    // Which goal is the ball heading toward?
+    let goal_y = if speed_y < 0.0 { GOAL_Y_BLUE } else { GOAL_Y_ORANGE };
+    let dy = goal_y - ball_pos.y;
+    // Ball must be heading toward the goal, not away
+    if dy.signum() != speed_y.signum() {
+        return false;
+    }
+    let t = dy / speed_y;
+    if t <= 0.0 || t > 6.0 {
+        return false; // too far away to be meaningful
+    }
+    let x_at_goal = ball_pos.x + ball_vel.x * t;
+    let z_at_goal = ball_pos.z + ball_vel.z * t + 0.5 * GRAVITY_Z * t * t;
+    x_at_goal.abs() < GOAL_HALF_WIDTH && z_at_goal > 0.0 && z_at_goal < GOAL_HEIGHT
+}
 
 #[derive(Debug, Clone, Copy)]
 enum ComponentKind {
