@@ -180,7 +180,8 @@ export interface RankInfo {
 export interface ReplaySearchParams {
   player_id?: string;
   playlist?: string;
-  season?: number;
+  /** "1"-"14" for legacy seasons, "f1", "f2", ... for free-to-play seasons (e.g. "f24"). */
+  season?: string;
   count?: number;
   sort_by?: string;
   sort_dir?: string;

@@ -197,7 +197,8 @@ pub struct RankInfo {
 pub struct ReplaySearchParams {
     pub player_id: Option<String>,
     pub playlist: Option<String>,
-    pub season: Option<u32>,
+    /// `1`-`14` for legacy seasons, `f1`, `f2`, ... for free-to-play seasons.
+    pub season: Option<String>,
     pub count: Option<u32>,
     pub sort_by: Option<String>,
     pub sort_dir: Option<String>,
