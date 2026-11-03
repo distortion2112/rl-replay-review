@@ -3,6 +3,7 @@ import type { ReplayData, PlayerData, ReplayListResponse, ReplaySearchParams } f
 import type { RotationInsight, BoostInsight, RateLimitStatus } from "../types/analysis";
 import type { FrameData } from "../types/frames";
 import type { RankLookup } from "../types/benchmark";
+import type { PlayerAggregate } from "../types/profile";
 
 export async function fetchReplay(replayId: string): Promise<ReplayData> {
   return invoke("fetch_replay", { replayId });
@@ -43,6 +44,14 @@ export async function searchPlayerReplays(
 /** Benchmark for a ballchasing rank id (e.g. "diamond-2"), plus the nearest tiers around it. */
 export async function getRankBenchmark(rank: string): Promise<RankLookup> {
   return invoke("get_rank_benchmark", { rank });
+}
+
+/**
+ * A player's per-game stats across replays (cache-first). Listen for the
+ * `aggregate-progress` event for progress.
+ */
+export async function buildPlayerAggregate(playerId: string, replayIds: string[]): Promise<PlayerAggregate> {
+  return invoke("build_player_aggregate", { playerId, replayIds });
 }
 
 export async function getRateLimitStatus(): Promise<RateLimitStatus> {

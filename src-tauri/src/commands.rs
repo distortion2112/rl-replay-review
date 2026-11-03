@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 use tauri::path::BaseDirectory;
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 use tauri_plugin_store::StoreExt;
 
 use crate::api::ballchasing::BallchasingClient;
 use crate::benchmark::{self, Benchmarks, RankLookup};
+use crate::profile::{PlayerAggregate, Skipped};
 use crate::api::models::{PlayerData, ReplayData, ReplayListResponse, ReplaySearchParams};
 use crate::api::rate_limit::{RateLimitStatus, RateLimiter};
 use crate::analysis::boost::{analyze_boost, BoostInsight};
@@ -171,4 +172,61 @@ pub fn get_rank_benchmark(
 ) -> Result<RankLookup, String> {
     let data = load_benchmarks(&app, &cache)?;
     benchmark::lookup(&data, &rank)
+}
+
+/// Raw replay details by id, shared by aggregate builds within a session.
+#[derive(Default)]
+pub struct RawReplayCache(pub Mutex<HashMap<String, serde_json::Value>>);
+
+#[derive(Clone, serde::Serialize)]
+struct AggregateProgress {
+    current: usize,
+    total: usize,
+    replay_id: String,
+}
+
+/// Builds a player's per-game stats across `replay_ids`, cache-first.
+/// Emits `aggregate-progress` as each replay is processed. Replays that fail
+/// to fetch or don't contain a full game for the player end up in `skipped`.
+#[tauri::command]
+pub async fn build_player_aggregate(
+    app: tauri::AppHandle,
+    rate_limiter: State<'_, RateLimiter>,
+    cache: State<'_, RawReplayCache>,
+    player_id: String,
+    replay_ids: Vec<String>,
+) -> Result<PlayerAggregate, String> {
+    let store = app.store("settings.json").map_err(|e| e.to_string())?;
+    let api_key = store
+        .get("api_key")
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+        .ok_or("No API key configured.")?;
+    let client = BallchasingClient::new(api_key, (*rate_limiter).clone());
+
+    let total = replay_ids.len();
+    let mut details = Vec::with_capacity(total);
+    let mut fetch_errors = Vec::new();
+    for (i, id) in replay_ids.iter().enumerate() {
+        let cached = cache.0.lock().ok().and_then(|m| m.get(id).cloned());
+        let detail = match cached {
+            Some(d) => Some(d),
+            None => match client.fetch_replay_raw(id).await {
+                Ok(d) => {
+                    if let Ok(mut m) = cache.0.lock() {
+                        m.insert(id.clone(), d.clone());
+                    }
+                    Some(d)
+                }
+                Err(e) => {
+                    fetch_errors.push(Skipped { replay_id: id.clone(), reason: e });
+                    None
+                }
+            },
+        };
+        details.extend(detail);
+        let _ = app.emit("aggregate-progress", AggregateProgress { current: i + 1, total, replay_id: id.clone() });
+    }
+    let mut aggregate = PlayerAggregate::from_details(&player_id, details.iter());
+    aggregate.skipped.extend(fetch_errors);
+    Ok(aggregate)
 }

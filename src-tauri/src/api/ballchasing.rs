@@ -93,6 +93,26 @@ impl BallchasingClient {
             .map_err(|e| format!("Failed to parse replay data: {}", e))
     }
 
+    /// Replay detail as raw JSON. The aggregate reads stats generically from
+    /// this, so stats ballchasing adds later are picked up without model changes.
+    pub async fn fetch_replay_raw(&self, replay_id: &str) -> Result<serde_json::Value, String> {
+        let response = self
+            .send(Endpoint::Get, format!("{}/replays/{}", BASE_URL, replay_id))
+            .await?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(match status.as_u16() {
+                401 => "Invalid API key. Check your ballchasing.com API key.".to_string(),
+                404 => format!("Replay '{}' not found.", replay_id),
+                _ => format!("API error {}", status),
+            });
+        }
+        response
+            .json::<serde_json::Value>()
+            .await
+            .map_err(|e| format!("Failed to parse replay data: {}", e))
+    }
+
     pub async fn download_replay(&self, replay_id: &str) -> Result<Vec<u8>, String> {
         let response = self
             .send(Endpoint::File, format!("{}/replays/{}/file", BASE_URL, replay_id))

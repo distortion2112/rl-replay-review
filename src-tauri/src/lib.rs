@@ -3,6 +3,7 @@ mod analysis;
 pub mod benchmark;
 mod commands;
 pub mod parser;
+pub mod profile;
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -10,7 +11,7 @@ use std::sync::Mutex;
 use api::rate_limit::RateLimiter;
 use commands::{
     analyze_replay_boost, analyze_replay_rotation, download_and_parse_replay, fetch_replay,
-    get_api_key, get_rank_benchmark, get_rate_limit_status, search_player_replays, set_api_key, BenchmarkCache, ReplayCache,
+    build_player_aggregate, get_api_key, get_rank_benchmark, get_rate_limit_status, search_player_replays, set_api_key, BenchmarkCache, RawReplayCache, ReplayCache,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -21,6 +22,7 @@ pub fn run() {
         .manage(RateLimiter::new())
         .manage(ReplayCache(Mutex::new(HashMap::new())))
         .manage(BenchmarkCache::default())
+        .manage(RawReplayCache::default())
         .invoke_handler(tauri::generate_handler![
             fetch_replay,
             set_api_key,
@@ -28,6 +30,7 @@ pub fn run() {
             get_rate_limit_status,
             search_player_replays,
             get_rank_benchmark,
+            build_player_aggregate,
             analyze_replay_rotation,
             analyze_replay_boost,
             download_and_parse_replay,
