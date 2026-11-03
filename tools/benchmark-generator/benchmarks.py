@@ -49,7 +49,12 @@ def collect_values(store: Store, seasons: list[int]) -> tuple[dict[int, dict[str
     pairs: list[tuple[int, dict[str, float]]] = []
     games: dict[int, set[str]] = {}
     for season in seasons:
-        for _, detail in store.details(season):
+        # Only the per-tier sample: anchor-test games are concentrated on a few
+        # players and would skew the distributions.
+        ids = [r[0] for r in store.db.execute(
+            "SELECT id FROM replays WHERE season = ? AND source LIKE 'tier:%' AND detail IS NOT NULL", (season,)
+        )]
+        for _, detail in store.details(ids=ids):
             for row in player_rows(detail):
                 if row.rank_steps is None or not row.full_game or row.duration <= 0:
                     continue
@@ -129,7 +134,7 @@ def build(store: Store, seasons: list[str]) -> dict:
             "playlist": PLAYLIST,
             "seasons": seasons,
             "rank_source": "ballchasing per-player rank",
-            "row_filter": "ranked players present for >= 90% of the game",
+            "row_filter": "per-tier sample (min-rank = max-rank lobbies); ranked players present for >= 90% of the game",
         },
         "stats": stat_meta,
         "tiers": tiers,
