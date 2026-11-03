@@ -9,12 +9,23 @@ export interface RotationInsight {
   explanation: string;
 }
 
+/** ballchasing.com patron tier, read from the API. */
+export type ApiTier = "regular" | "gold" | "diamond" | "champion" | "gc";
+
+export interface EndpointStatus {
+  endpoint: "list" | "get" | "file";
+  per_second: number;
+  /** null when the tier has no hourly cap for this endpoint */
+  per_hour: number | null;
+  used_last_hour: number;
+  remaining_this_hour: number | null;
+}
+
 export interface RateLimitStatus {
-  tier: "free" | "patron";
-  calls_used: number;
-  calls_remaining: number;
-  weekly_budget: number;
-  week_resets_at: string;
+  tier: ApiTier;
+  /** false until the tier has been read from the API this session */
+  tier_detected: boolean;
+  endpoints: EndpointStatus[];
 }
 
 export interface BoostInsight {
