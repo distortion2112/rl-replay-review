@@ -56,8 +56,9 @@ src/
     charts/            <- Boost and movement charts
     stats/             <- Analysis panels, player comparison
     input/             <- API key setup, replay input, settings
+    coaching/          <- Coaching tab: profile form, report, findings, playstyle
     timeline/          <- Playback controls, scrubber, goal replays
-  hooks/               <- useReplay, usePlayback, useKeyboard
+  hooks/               <- useReplay, usePlayback, useKeyboard, useCoaching
   lib/                 <- Field math, heatmap logic, trail logic, Tauri command wrappers
   types/               <- TypeScript type definitions (replay, frames, analysis)
 ```
