@@ -4,6 +4,10 @@
 
 pub mod engine;
 pub mod models;
+pub mod text;
+pub mod verify;
 
 pub use engine::{generate_report, percentile};
 pub use models::*;
+pub use text::{render, CoachingReport, ReportItem};
+pub use verify::{verify, Violation};

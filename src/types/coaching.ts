@@ -47,3 +47,24 @@ export interface EvidencePack {
   top_weaknesses: string[];
   benchmark_seasons: string[];
 }
+
+/** Mirrors `src-tauri/src/coaching/text.rs`. */
+export interface ReportItem {
+  finding_id: string;
+  kind: FindingKind;
+  title: string;
+  explanation: string;
+  /** what to practice: weaknesses with mapped advice only */
+  action: string | null;
+  /** in the pack's top 3 for its kind */
+  top: boolean;
+}
+
+export interface CoachingReport {
+  pack_schema_version: number;
+  summary: string;
+  /** top weaknesses, top strengths, other weaknesses and strengths, then uncertain */
+  items: ReportItem[];
+  /** "templates" */
+  source: string;
+}
