@@ -203,10 +203,15 @@ def cmd_candidates(args) -> None:
         if est:
             estimates.append((key, est[0], len(set(appearances[key]))))
 
-    # 4. Spread the list across tiers from min_tier up
+    # 4. Spread the list across the target tiers (or every tier from min_tier up),
+    #    leaving out players who already have a manual rank this season
+    targets = {TIER_INDEX[t] for t in args.tiers.split(",")} if args.tiers else None
+    known = set(manual_anchors(store, snum))
     by_tier: dict[int, list] = collections.defaultdict(list)
     for key, tier, games in estimates:
-        if tier >= min_tier:
+        if key in known:
+            continue
+        if (targets is not None and tier in targets) or (targets is None and tier >= min_tier):
             by_tier[tier].append((games, key))
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -222,7 +227,7 @@ def cmd_candidates(args) -> None:
                             TIERS[tier], "", "", "", ""])
                 picked += 1
     log(f"wrote {picked} candidates to {out}")
-    for tier in range(min_tier, len(TIERS)):
+    for tier in sorted(targets) if targets is not None else range(min_tier, len(TIERS)):
         print(f"  {TIERS[tier]:18} {min(len(by_tier.get(tier, [])), args.per_tier)}")
 
 
@@ -472,6 +477,7 @@ def main(argv: list[str] | None = None) -> None:
     c.add_argument("--max-candidates", type=int, default=200)
     c.add_argument("--games-per-candidate", type=int, default=6)
     c.add_argument("--min-tier", default="diamond-1", choices=TIERS)
+    c.add_argument("--tiers", help="only these estimated tiers, e.g. diamond-1,diamond-2,supersonic-legend")
     c.add_argument("--per-tier", type=int, default=5)
     c.add_argument("--out", required=True)
 
