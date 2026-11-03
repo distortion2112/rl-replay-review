@@ -114,3 +114,35 @@ class Benchmarks(unittest.TestCase):
         self.assertEqual(sig["direction"], "higher")
         self.assertGreater(sig["weight"], 0.9)
         self.assertIsNone(rank_signal(pairs[:10], "s"))
+
+
+class Anchors(unittest.TestCase):
+    def test_parse_rank_forms(self):
+        from anchors import parse_rank
+        d2 = TIERS.index("diamond-2")
+        for text in ["diamond-2", "Diamond 2", "Diamond II", "  diamond  ii ", "D2", "d2"]:
+            self.assertEqual(parse_rank(text), d2, text)
+        self.assertEqual(parse_rank("GC1"), TIERS.index("grand-champion-1"))
+        self.assertEqual(parse_rank("Grand Champion III"), TIERS.index("grand-champion-3"))
+        self.assertEqual(parse_rank("C3"), TIERS.index("champion-3"))
+        self.assertEqual(parse_rank("SSL"), TIERS.index("supersonic-legend"))
+        self.assertEqual(parse_rank("Supersonic Legend"), TIERS.index("supersonic-legend"))
+        for bad in ["", "diamond", "diamond 4", "platinum-9", "legend"]:
+            self.assertIsNone(parse_rank(bad), bad)
+
+    def test_tier_position_interpolates_and_clamps(self):
+        from anchors import _tier_position
+        rising = [(10, 100.0), (11, 200.0), (12, 300.0)]
+        self.assertEqual(_tier_position(150.0, rising), 10.5)
+        self.assertEqual(_tier_position(50.0, rising), 10.0)
+        self.assertEqual(_tier_position(999.0, rising), 12.0)
+        falling = [(10, 30.0), (11, 20.0), (12, 10.0)]
+        self.assertEqual(_tier_position(15.0, falling), 11.5)
+
+    def test_tracker_urls(self):
+        from anchors import tracker_url
+        self.assertTrue(tracker_url("steam", "7656119", "x").endswith("/steam/7656119/overview"))
+        self.assertTrue(tracker_url("epic", "abc", "Some Name").endswith("/epic/Some%20Name/overview"))
+        self.assertIn("/psn/", tracker_url("ps4", "1", "n"))
+        self.assertIn("/xbl/", tracker_url("xbox", "1", "n"))
+        self.assertEqual(tracker_url("psynet", "1", "n"), "")

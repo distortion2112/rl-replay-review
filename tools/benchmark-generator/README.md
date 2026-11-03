@@ -62,6 +62,22 @@ ballchasing stopped attaching ranks to ranked replays around **2026-06-05** (mid
 - **Per tier:** `sample_size`, `games`, `low_sample` (fewer than 30 rows), and per stat: `n`, `mean`, `stddev`, `p5`–`p95`.
 - **Per stat:** `rank_signal` is the Spearman correlation with rank across all tiers. `direction` is whether the stat rises or falls at higher ranks, and `weight` is |ρ|. Coaching uses it to prioritize gaps that actually separate ranks.
 
+## Manual anchors for current seasons (`anchors.py`)
+
+There's no working rank API yet, so current-season anchors are looked up by hand on tracker.gg:
+
+```bash
+python3 anchors.py validate --season f22          # how good the stat-based tier guess is
+python3 anchors.py candidates --season f24 --out data/anchor_candidates_f24.csv
+# fill in rank_2v2 (+ division, checked_on) for each row from its tracker_url
+python3 anchors.py import data/anchor_candidates_f24.csv
+```
+
+- **`candidates`.** Pools one list page per day over `--days`. It keeps frequent uploaders, so each lookup labels many games, and fetches a few of their games. It then spreads the list across tiers from `--min-tier` (default Diamond 1) using a rough tier guess: the weighted median of where the player's top rank-signal stats sit along the tier medians.
+- **The guess only spreads the list.** It is never used as a label. On f22 it is unbiased per game but noisy: about 57% within one tier and 71% within two, from Diamond up.
+- **`import`.** Accepts ranks typed as `diamond-2`, `Diamond 2`, `Diamond II`, `D2`, `GC1`, `SSL`. Rows without a rank are skipped. Anchors are stored with `rank_source = 'manual'` and `as_of = checked_on`.
+- **Diamond and up only.** The f22 anchor test showed lobby labels from anchors are reliable from about Diamond up, and not in Bronze or Silver.
+
 ## Retention
 
 The skill ceiling moves quickly, so `prune` keeps only:
