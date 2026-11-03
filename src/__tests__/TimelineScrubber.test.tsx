@@ -13,7 +13,7 @@ const initialState = usePlaybackStore.getState();
 const frameData: FrameData = {
   players: [],
   frames: [0, 1, 2, 3].map((time) => ({ time, ball: null, players: [] })),
-  goals: [{ frame: 2, time: 2 }],
+  goals: [{ frame: 2, time: 2, scoring_team: 0, scorer_index: null, ball_position: null, last_touches: [] }],
   duration_seconds: 75,
   total_frames: 4,
 };

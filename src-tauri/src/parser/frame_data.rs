@@ -82,6 +82,21 @@ pub struct PlayerFrame {
 pub struct GoalEvent {
     pub frame: usize,
     pub time: f32,
+    /// 0 = blue, 1 = orange
+    pub scoring_team: Option<u8>,
+    /// Header player index of the scorer
+    pub scorer_index: Option<usize>,
+    /// Ball position at the goal frame
+    pub ball_position: Option<Position>,
+    /// Last touches leading to the goal (most recent first, up to 3)
+    pub last_touches: Vec<GoalTouch>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GoalTouch {
+    pub player_index: usize,
+    pub team: u8,
+    pub time: f32,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -93,6 +108,12 @@ pub struct TouchEvent {
     pub team: u8,
     /// Ball speed change across the touch, uu/s
     pub ball_speed_delta: f32,
+    /// Ball velocity after the touch (uu/s)
+    pub ball_velocity: Option<Position>,
+    /// True if the ball is heading toward either goal after this touch
+    pub is_shot: bool,
+    /// True if a car from the other team is within TOUCH_MAX_DISTANCE within ±0.25s
+    pub contested: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

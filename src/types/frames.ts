@@ -62,9 +62,19 @@ export interface Controls {
   dodge_active: boolean | null;
 }
 
+export interface GoalTouch {
+  player_index: number;
+  team: number;
+  time: number;
+}
+
 export interface GoalEvent {
   frame: number;
   time: number;
+  scoring_team: number | null;
+  scorer_index: number | null;
+  ball_position: Position | null;
+  last_touches: GoalTouch[];
 }
 
 export interface TouchEvent {
@@ -73,6 +83,9 @@ export interface TouchEvent {
   player_index: number;
   team: number;
   ball_speed_delta: number;
+  ball_velocity: Position | null;
+  is_shot: boolean;
+  contested: boolean;
 }
 
 export interface DemoEvent {

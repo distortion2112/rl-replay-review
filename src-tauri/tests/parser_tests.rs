@@ -315,7 +315,7 @@ fn frame_data_serializes_to_json() {
                 ],
             },
         ],
-        goals: vec![GoalEvent { frame: 100, time: 45.5 }],
+        goals: vec![GoalEvent { frame: 100, time: 45.5, scoring_team: Some(0), scorer_index: Some(0), ball_position: None, last_touches: Vec::new() }],
         touches: vec![],
         demos: vec![],
         kickoffs: vec![],
@@ -444,4 +444,111 @@ fn s17_demos_match_ballchasing() {
     let mut demos: Vec<(&str, &str)> = fd.demos.iter().map(|d| (name(d.attacker_index), name(d.victim_index))).collect();
     demos.sort();
     assert_eq!(demos, vec![("SooP", "DuckSandwich"), ("distortion2112", "FourAces.")]);
+}
+
+// --- Goal attribution tests (issue #66) ---
+
+/// GoalEvent.scoring_team must match the header's PlayerTeam for every goal.
+fn assert_goal_teams_from_header(fixture: &str) {
+    use boxcars::{HeaderProp, ParserBuilder};
+    let data = load_fixture(fixture);
+    let fd = parse_replay(&data).unwrap();
+    let header = ParserBuilder::new(&data).never_parse_network_data().parse().unwrap();
+    let Some((_, HeaderProp::Array(header_goals))) = header.properties.iter().find(|(k, _)| k == "Goals") else {
+        panic!("{}: no Goals header", fixture);
+    };
+    assert_eq!(fd.goals.len(), header_goals.len(), "{}: goal count mismatch", fixture);
+    for (i, (goal, hg)) in fd.goals.iter().zip(header_goals.iter()).enumerate() {
+        let expected_team = hg.iter().find_map(|(k, v)| match (k.as_str(), v) {
+            ("PlayerTeam", HeaderProp::Int(t)) => Some(*t as u8),
+            _ => None,
+        });
+        assert_eq!(goal.scoring_team, expected_team, "{}: goal {} scoring_team mismatch", fixture, i);
+        let expected_name = hg.iter().find_map(|(k, v)| match (k.as_str(), v) {
+            ("PlayerName", HeaderProp::Str(s)) => Some(s.clone()),
+            _ => None,
+        });
+        if let (Some(idx), Some(name)) = (goal.scorer_index, &expected_name) {
+            assert_eq!(fd.players[idx].name, *name, "{}: goal {} scorer mismatch", fixture, i);
+        }
+    }
+}
+
+/// Goals per player must match the expected counts (from ballchasing stats).
+fn assert_goals_per_player(fixture: &str, expected: &[(&str, usize)]) {
+    let fd = parse_replay(&load_fixture(fixture)).unwrap();
+    for &(name, count) in expected {
+        let player = fd.players.iter().find(|p| p.name == name)
+            .unwrap_or_else(|| panic!("{}: player {} not found", fixture, name));
+        let actual = fd.goals.iter().filter(|g| g.scorer_index == Some(player.index)).count();
+        assert_eq!(actual, count, "{}: {} expected {} goals, got {}", fixture, name, count, actual);
+    }
+}
+
+/// Each goal should have last_touches populated.
+fn assert_goals_have_last_touches(fixture: &str) {
+    let fd = parse_replay(&load_fixture(fixture)).unwrap();
+    for (i, goal) in fd.goals.iter().enumerate() {
+        assert!(!goal.last_touches.is_empty(), "{}: goal {} has no last_touches", fixture, i);
+    }
+}
+
+/// Touch events should have ball_velocity populated.
+fn assert_touches_have_ball_velocity(fixture: &str) {
+    let fd = parse_replay(&load_fixture(fixture)).unwrap();
+    assert!(!fd.touches.is_empty(), "{}: no touches", fixture);
+    let with_vel = fd.touches.iter().filter(|t| t.ball_velocity.is_some()).count();
+    let ratio = with_vel as f64 / fd.touches.len() as f64;
+    assert!(ratio > 0.9, "{}: only {:.0}% of touches have ball_velocity", fixture, ratio * 100.0);
+}
+
+#[test]
+fn ranked_2v2_goal_teams_match_header() {
+    assert_goal_teams_from_header("ranked-2v2.replay");
+}
+
+#[test]
+fn ranked_2v2_goals_per_player() {
+    // Blue 4 - Orange 5: rtl_escolta394 (blue) 4, JohnDavid1682 (orange) 3, aykildu (orange) 2
+    assert_goals_per_player("ranked-2v2.replay", &[
+        ("rtl_escolta394", 4),
+        ("JohnDavid1682", 3),
+        ("aykildu", 2),
+    ]);
+}
+
+#[test]
+fn ranked_2v2_goals_have_last_touches() {
+    assert_goals_have_last_touches("ranked-2v2.replay");
+}
+
+#[test]
+fn ranked_2v2_touches_have_ball_velocity() {
+    assert_touches_have_ball_velocity("ranked-2v2.replay");
+}
+
+#[test]
+fn s17_goal_teams_match_header() {
+    assert_goal_teams_from_header("unranked-2v2-s17.replay");
+}
+
+#[test]
+fn s17_goals_per_player() {
+    // Orange 4 - Blue 3: DuckSandwich (orange) 3, distortion2112 (orange) 1, FourAces. (blue) 2, SooP (blue) 1
+    assert_goals_per_player("unranked-2v2-s17.replay", &[
+        ("DuckSandwich", 3),
+        ("distortion2112", 1),
+        ("FourAces.", 2),
+        ("SooP", 1),
+    ]);
+}
+
+#[test]
+fn s17_goals_have_last_touches() {
+    assert_goals_have_last_touches("unranked-2v2-s17.replay");
+}
+
+#[test]
+fn s17_touches_have_ball_velocity() {
+    assert_touches_have_ball_velocity("unranked-2v2-s17.replay");
 }
