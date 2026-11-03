@@ -59,6 +59,8 @@ src/
 - **Boost tracking**: Maps `boost_component` to car actors live via `TAGame.CarComponent_TA:Vehicle`, not via pickup detection.
 - **Sampled positions are projected to sample time**: Each rigid body updates every 1–3 network frames on its own schedule, so a raw position at a sample frame is 0–~70ms stale by a varying amount. The parser projects it forward by `linear_velocity × age` (capped at 0.25s). Without this, per-sample movement is uneven and interpolated playback pulses.
 - **Replays have no frames during goal replays**: Frame times jump 2–9s after each goal. The frontend never interpolates across a gap > 0.5s, and playback skips across it.
+- **Events resolve players at the moment they happen**: Touches and demos use the live car→player link, never a whole-replay map. A demolished car's Pawn PRI is unset in the demo frame itself, so events fall back to the car's last resolved player. Frames do not, so a wrecked car disappears immediately.
+- **Demos**: Current replays send `DemolishExtended`, recorded on the victim's car. A respawned car may be re-created under the same actor ID *without* a delete, and its initial replication repeats the last demo. All state for re-created IDs is cleared, and demo attributes on a car created that frame are ignored. Demos with no attacker (e.g. post-goal explosions) keep `attacker_index: None`.
 - **Demo gaps are expected**: A demolished player has no car actor for ~3s before respawn, so they are absent from those frames.
 
 ---

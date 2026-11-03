@@ -157,6 +157,120 @@ fn parse_ranked_2v2_positions_in_field_bounds() {
     }
 }
 
+// --- Full capture tests (#32) ---
+
+#[test]
+fn parse_ranked_2v2_has_velocities() {
+    let data = load_fixture("ranked-2v2.replay");
+    let frame_data = parse_replay(&data).unwrap();
+
+    let moving_cars = frame_data.frames.iter()
+        .flat_map(|f| f.players.iter())
+        .filter_map(|p| p.kinematics.and_then(|k| k.linear_velocity))
+        .filter(|v| (v.x * v.x + v.y * v.y + v.z * v.z).sqrt() > 500.0)
+        .count();
+    assert!(moving_cars > 1000, "Expected plenty of fast car frames, got {}", moving_cars);
+
+    let ball_moving = frame_data.frames.iter()
+        .filter_map(|f| f.ball_kinematics.and_then(|k| k.linear_velocity))
+        .any(|v| v.x.abs() + v.y.abs() + v.z.abs() > 100.0);
+    assert!(ball_moving, "Ball never has a meaningful velocity");
+}
+
+#[test]
+fn parse_ranked_2v2_quaternions_normalized() {
+    let data = load_fixture("ranked-2v2.replay");
+    let frame_data = parse_replay(&data).unwrap();
+
+    let mut checked = 0;
+    for frame in &frame_data.frames {
+        for k in frame.players.iter().filter_map(|p| p.kinematics).chain(frame.ball_kinematics) {
+            let q = k.rotation;
+            let norm = (q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w).sqrt();
+            assert!((norm - 1.0).abs() < 0.05, "Quaternion not normalized: {:?} (norm {})", q, norm);
+            checked += 1;
+        }
+    }
+    assert!(checked > 0, "No rotations captured");
+}
+
+#[test]
+fn parse_ranked_2v2_touch_before_each_goal() {
+    let data = load_fixture("ranked-2v2.replay");
+    let frame_data = parse_replay(&data).unwrap();
+
+    let n = frame_data.touches.len();
+    assert!((50..2000).contains(&n), "Implausible touch count: {}", n);
+    for goal in &frame_data.goals {
+        let touched = frame_data.touches.iter()
+            .any(|t| t.time <= goal.time && goal.time - t.time < 8.0);
+        assert!(touched, "No touch in the 8s before the goal at {}s", goal.time);
+    }
+}
+
+#[test]
+fn parse_ranked_2v2_touch_players_valid() {
+    let data = load_fixture("ranked-2v2.replay");
+    let frame_data = parse_replay(&data).unwrap();
+
+    for t in &frame_data.touches {
+        let player = frame_data.players.iter().find(|p| p.index == t.player_index);
+        assert!(player.is_some(), "Touch references unknown player {}", t.player_index);
+        assert_eq!(player.unwrap().team, t.team, "Touch team does not match player team");
+    }
+    let touchers: std::collections::HashSet<usize> =
+        frame_data.touches.iter().map(|t| t.player_index).collect();
+    assert_eq!(touchers.len(), 4, "Expected all 4 players to touch the ball");
+}
+
+#[test]
+fn parse_ranked_2v2_kickoffs() {
+    let data = load_fixture("ranked-2v2.replay");
+    let frame_data = parse_replay(&data).unwrap();
+
+    // Opening kickoff plus one after every goal (overtime adds one more)
+    assert!(frame_data.kickoffs.len() >= frame_data.goals.len(),
+        "Expected at least {} kickoffs, got {}", frame_data.goals.len(), frame_data.kickoffs.len());
+    assert!(frame_data.kickoffs.len() <= frame_data.goals.len() + 3,
+        "Too many kickoffs: {}", frame_data.kickoffs.len());
+}
+
+#[test]
+fn parse_ranked_2v2_controls_present() {
+    let data = load_fixture("ranked-2v2.replay");
+    let frame_data = parse_replay(&data).unwrap();
+
+    let players = frame_data.frames.iter().flat_map(|f| f.players.iter());
+    let (mut throttle, mut steer, mut boosting, mut jumping) = (0, 0, 0, 0);
+    for p in players {
+        let c = p.controls;
+        if let Some(t) = c.throttle {
+            assert!((-1.0..=1.0).contains(&t), "Throttle out of range: {}", t);
+            throttle += 1;
+        }
+        if c.steer.is_some() { steer += 1; }
+        if c.boost_active == Some(true) { boosting += 1; }
+        if c.jump_active == Some(true) { jumping += 1; }
+    }
+    assert!(throttle > 0, "No throttle data");
+    assert!(steer > 0, "No steer data");
+    assert!(boosting > 0, "Never saw boost active");
+    assert!(jumping > 0, "Never saw jump active");
+}
+
+#[test]
+fn parse_ranked_2v2_demo_players_valid() {
+    let data = load_fixture("ranked-2v2.replay");
+    let frame_data = parse_replay(&data).unwrap();
+
+    // The fixture may have no demos; when present they must reference real players
+    for d in &frame_data.demos {
+        if let (Some(a), Some(v)) = (d.attacker_index, d.victim_index) {
+            assert_ne!(a, v, "Attacker and victim are the same player");
+        }
+    }
+}
+
 // --- Edge case tests ---
 
 #[test]
@@ -194,13 +308,17 @@ fn frame_data_serializes_to_json() {
             GameFrame {
                 time: 0.0,
                 ball: Some(Position { x: 0.0, y: 0.0, z: 100.0 }),
+                ball_kinematics: None,
                 players: vec![
-                    PlayerFrame { player_index: 0, position: Some(Position { x: -1000.0, y: -3000.0, z: 17.0 }), boost_amount: Some(33) },
-                    PlayerFrame { player_index: 1, position: Some(Position { x: 1000.0, y: 3000.0, z: 17.0 }), boost_amount: None },
+                    PlayerFrame { player_index: 0, position: Some(Position { x: -1000.0, y: -3000.0, z: 17.0 }), boost_amount: Some(33), kinematics: None, controls: Controls::default() },
+                    PlayerFrame { player_index: 1, position: Some(Position { x: 1000.0, y: 3000.0, z: 17.0 }), boost_amount: None, kinematics: None, controls: Controls::default() },
                 ],
             },
         ],
         goals: vec![GoalEvent { frame: 100, time: 45.5 }],
+        touches: vec![],
+        demos: vec![],
+        kickoffs: vec![],
         duration_seconds: 300.0,
         total_frames: 1,
     };
@@ -223,13 +341,17 @@ fn position_copy_semantics() {
     assert_eq!(pos.z, pos2.z);
 }
 
-#[test]
-fn parse_ranked_2v2_players_tracked_across_car_respawns() {
-    // Car actor IDs are recycled across respawns and can move between players.
-    // A full-match player must appear in nearly every frame; only demo respawns
-    // (~3s each) should leave gaps.
-    let data = load_fixture("ranked-2v2.replay");
-    let fd = parse_replay(&data).unwrap();
+// --- Player identity and event attribution (run against every fixture) ---
+//
+// `unranked-2v2-s17.replay` (ballchasing 542d459c-a3a4-451e-a06b-017c77a74a70, season 17,
+// all 4 players present the full match) exposed recycled car actor IDs moving between
+// players, touch credit going to the wrong player on 2 of 7 goals, and repeated demos.
+
+/// Car actor IDs are recycled across respawns and can move between players. A
+/// full-match player must appear in nearly every frame; only demo respawns
+/// (~3s each) should leave gaps.
+fn assert_players_tracked_across_respawns(fixture: &str) {
+    let fd = parse_replay(&load_fixture(fixture)).unwrap();
     let mut present = vec![0usize; fd.players.len()];
     for frame in &fd.frames {
         for p in &frame.players {
@@ -238,6 +360,88 @@ fn parse_ranked_2v2_players_tracked_across_car_respawns() {
     }
     for (i, count) in present.iter().enumerate() {
         let ratio = *count as f64 / fd.frames.len() as f64;
-        assert!(ratio > 0.9, "{} present in only {:.0}% of frames", fd.players[i].name, ratio * 100.0);
+        assert!(ratio > 0.9, "{}: {} present in only {:.0}% of frames", fixture, fd.players[i].name, ratio * 100.0);
     }
+}
+
+/// Rocket League credits a goal to the last touch by the scoring team. Touches
+/// attributed through stale car->player links fail this.
+fn assert_goals_credited_to_last_scoring_team_touch(fixture: &str) {
+    use boxcars::{HeaderProp, ParserBuilder};
+    let data = load_fixture(fixture);
+    let fd = parse_replay(&data).unwrap();
+    let header = ParserBuilder::new(&data).never_parse_network_data().parse().unwrap();
+    let Some((_, HeaderProp::Array(goals))) = header.properties.iter().find(|(k, _)| k == "Goals") else {
+        panic!("{}: no Goals header", fixture);
+    };
+    assert!(!goals.is_empty());
+    for g in goals {
+        let frame = g.iter().find_map(|(k, v)| match (k.as_str(), v) {
+            ("frame", HeaderProp::Int(f)) => Some(*f as usize),
+            _ => None,
+        }).unwrap();
+        let scorer = g.iter().find_map(|(k, v)| match (k.as_str(), v) {
+            ("PlayerName", HeaderProp::Str(s)) => Some(s.clone()),
+            _ => None,
+        }).unwrap();
+        let team = fd.players.iter().find(|p| p.name == scorer).unwrap().team;
+        let last = fd.touches.iter().rev().find(|t| t.frame <= frame && t.team == team).unwrap();
+        assert_eq!(fd.players[last.player_index].name, scorer, "{}: goal at frame {} credited to wrong player", fixture, frame);
+    }
+}
+
+/// A demolished car's PRI link is cleared in the demo frame, and a respawned car's
+/// initial replication repeats the last demo. Neither may lose the victim or
+/// produce a duplicate.
+fn assert_demos_unique_with_victims(fixture: &str) {
+    let fd = parse_replay(&load_fixture(fixture)).unwrap();
+    assert!(!fd.demos.is_empty(), "{}: no demos detected", fixture);
+    for d in &fd.demos {
+        assert!(d.victim_index.is_some(), "{}: demo at {:.1}s has no victim", fixture, d.time);
+    }
+    for pair in fd.demos.windows(2) {
+        let same = pair[0].attacker_index == pair[1].attacker_index && pair[0].victim_index == pair[1].victim_index;
+        assert!(!(same && pair[1].time - pair[0].time < 5.0), "{}: duplicate demo at {:.1}s and {:.1}s", fixture, pair[0].time, pair[1].time);
+    }
+}
+
+#[test]
+fn ranked_2v2_players_tracked_across_respawns() {
+    assert_players_tracked_across_respawns("ranked-2v2.replay");
+}
+
+#[test]
+fn ranked_2v2_goals_credited_to_last_scoring_team_touch() {
+    assert_goals_credited_to_last_scoring_team_touch("ranked-2v2.replay");
+}
+
+#[test]
+fn ranked_2v2_demos_unique_with_victims() {
+    assert_demos_unique_with_victims("ranked-2v2.replay");
+}
+
+#[test]
+fn s17_players_tracked_across_respawns() {
+    assert_players_tracked_across_respawns("unranked-2v2-s17.replay");
+}
+
+#[test]
+fn s17_goals_credited_to_last_scoring_team_touch() {
+    assert_goals_credited_to_last_scoring_team_touch("unranked-2v2-s17.replay");
+}
+
+#[test]
+fn s17_demos_unique_with_victims() {
+    assert_demos_unique_with_victims("unranked-2v2-s17.replay");
+}
+
+#[test]
+fn s17_demos_match_ballchasing() {
+    // ballchasing.com stats for this replay: SooP and distortion2112 inflicted one
+    // demo each; FourAces. and DuckSandwich took one each.
+    let fd = parse_replay(&load_fixture("unranked-2v2-s17.replay")).unwrap();
+    let name = |i: Option<usize>| i.map(|i| fd.players[i].name.as_str()).unwrap_or("?");
+    let mut demos: Vec<(&str, &str)> = fd.demos.iter().map(|d| (name(d.attacker_index), name(d.victim_index))).collect();
+    demos.sort();
+    assert_eq!(demos, vec![("SooP", "DuckSandwich"), ("distortion2112", "FourAces.")]);
 }
