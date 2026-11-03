@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
@@ -30,5 +31,12 @@ export default defineConfig(() => ({
       //    collector's SQLite writes otherwise trigger a page reload on every commit)
       ignored: ["**/src-tauri/**", "**/tools/**"],
     },
+  },
+
+  // Vitest. Defaults to the node environment; component tests opt in to jsdom
+  // per file with a `// @vitest-environment jsdom` docblock.
+  test: {
+    include: ["src/**/*.test.{ts,tsx}"],
+    environment: "node",
   },
 }));
