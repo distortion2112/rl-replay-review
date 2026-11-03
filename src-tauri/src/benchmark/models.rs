@@ -68,6 +68,14 @@ pub struct RankBenchmark {
     pub games: u32,
     /// Fewer than 30 rows: show with low confidence
     pub low_sample: bool,
+    /// Season this tier's rows come from (tiers can mix seasons), e.g. `f24`
+    #[serde(default)]
+    pub season: Option<String>,
+    /// How this tier's ranks were known: ballchasing per-player ranks, or
+    /// manual anchors looked up on tracker.gg
+    #[serde(default)]
+    pub rank_source: Option<String>,
+    /// Stats can differ by tier: newer seasons report stats older ones don't.
     pub stats: HashMap<String, StatDistribution>,
 }
 
