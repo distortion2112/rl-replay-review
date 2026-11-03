@@ -1,4 +1,4 @@
-use crate::api::models::{ReplayData, ReplayListResponse, ReplaySearchParams};
+use crate::api::models::{ReplayData, ReplayListItem, ReplayListResponse, ReplaySearchParams, SearchIdentity};
 use crate::api::rate_limit::{retry_after, ApiTier, Endpoint, RateLimiter};
 use reqwest::{Client, IntoUrl, Response};
 use tokio::time::Duration;
@@ -151,6 +151,151 @@ impl BallchasingClient {
             .await
             .map_err(|e| format!("Failed to parse search results: {}", e))
     }
+
+    /// Runs a search from `first`, following `next` pages until `limit` replays
+    /// are collected or the results run out.
+    pub async fn search_pages(&self, first: reqwest::Url, limit: usize) -> Result<Vec<ReplayListItem>, String> {
+        let mut out = Vec::new();
+        let mut url = first;
+        loop {
+            let response = self.send(Endpoint::List, url).await?;
+            let status = response.status();
+            if !status.is_success() {
+                let body = response.text().await.unwrap_or_default();
+                return Err(match status.as_u16() {
+                    401 => "Invalid API key. Check your ballchasing.com API key.".to_string(),
+                    _ => format!("Search error {}: {}", status, body),
+                });
+            }
+            let page = response
+                .json::<ReplayListResponse>()
+                .await
+                .map_err(|e| format!("Failed to parse search results: {}", e))?;
+            let empty = page.list.is_empty();
+            out.extend(page.list);
+            match page.next {
+                Some(next) if out.len() < limit && !empty => url = checked_next(&next)?,
+                _ => break,
+            }
+        }
+        out.truncate(limit);
+        Ok(out)
+    }
+}
+
+/// A `next` cursor is only followed if it points back at the ballchasing
+/// replays endpoint, since the API key is sent with the request.
+fn checked_next(next: &str) -> Result<reqwest::Url, String> {
+    let url = reqwest::Url::parse(next).map_err(|e| format!("Invalid next-page URL: {}", e))?;
+    let expected = reqwest::Url::parse(BASE_URL).map_err(|e| e.to_string())?;
+    let same_api = url.scheme() == "https"
+        && url.host_str() == expected.host_str()
+        && url.path().starts_with("/api/replays");
+    if !same_api {
+        return Err("Refusing to follow a next-page URL outside the ballchasing replays API.".to_string());
+    }
+    Ok(url)
+}
+
+/// Filters from the site search that pass straight through to `GET /api/replays`.
+const SITE_FILTERS: &[&str] = &[
+    "title", "player-name", "player-id", "season", "min-rank", "max-rank", "pro", "uploader", "group", "map",
+    "created-before", "created-after", "replay-date-before", "replay-date-after",
+];
+
+/// A search pasted from the ballchasing.com site (e.g. `https://ballchasing.com/?player-name=x`),
+/// turned into API filters for coaching.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SiteSearch {
+    pub filters: Vec<(String, String)>,
+    pub names: Vec<String>,
+    pub ids: Vec<String>,
+    /// Parameters left out, with the reason
+    pub ignored: Vec<String>,
+}
+
+/// Parses a pasted ballchasing.com search. Only the site's own host is accepted;
+/// the API request is always built from scratch, so nothing else in the URL is sent
+/// anywhere. Coaching compares against ranked 2v2 benchmarks, so the playlist is
+/// forced to ranked-doubles, and a win/loss filter is dropped because a one-sided
+/// sample would skew every stat.
+pub fn parse_site_search(text: &str) -> Result<SiteSearch, String> {
+    let url = reqwest::Url::parse(text.trim()).map_err(|_| "That isn't a link. Paste a ballchasing.com search URL.".to_string())?;
+    let host = url.host_str().unwrap_or("");
+    if !matches!(url.scheme(), "https" | "http") || !matches!(host, "ballchasing.com" | "www.ballchasing.com") {
+        return Err("Only ballchasing.com search links are supported.".to_string());
+    }
+    if !matches!(url.path(), "/" | "" | "/replays") {
+        return Err("Paste a link from ballchasing.com's replay search (the 'all replays' page).".to_string());
+    }
+    let mut filters = Vec::new();
+    let (mut names, mut ids, mut ignored) = (Vec::new(), Vec::new(), Vec::new());
+    let mut playlists = Vec::new();
+    for (k, v) in url.query_pairs() {
+        let (k, v) = (k.to_string(), v.trim().to_string());
+        if v.is_empty() {
+            continue;
+        }
+        match k.as_str() {
+            "playlist" => playlists.push(v),
+            "match-result" => ignored.push(format!("{k}={v}: coaching needs wins and losses")),
+            "season" => filters.push((k, normalize_season(&v)?)),
+            "player-name" => {
+                names.push(v.clone());
+                filters.push((k, v));
+            }
+            "player-id" => {
+                ids.push(v.clone());
+                filters.push((k, v));
+            }
+            _ if SITE_FILTERS.contains(&k.as_str()) => filters.push((k, v)),
+            "sort-by" | "sort-dir" | "count" | "after" | "page" => {}
+            _ => ignored.push(format!("{k}={v}: not a replay filter")),
+        }
+    }
+    if names.is_empty() && ids.is_empty() {
+        return Err("The search needs a player name or player id, e.g. ballchasing.com/?player-name=you".to_string());
+    }
+    if !playlists.is_empty() && !playlists.iter().any(|p| p == "ranked-doubles") {
+        return Err(format!(
+            "This search is for {}. Coaching compares ranked 2v2 games, so include ranked-doubles or remove the playlist filter.",
+            playlists.join(", ")
+        ));
+    }
+    filters.push(("playlist".to_string(), "ranked-doubles".to_string()));
+    Ok(SiteSearch { filters, names, ids, ignored })
+}
+
+/// First page of a site search, newest games first.
+pub fn site_search_url(search: &SiteSearch, count: u32) -> Result<reqwest::Url, String> {
+    let mut query = search.filters.clone();
+    query.push(("count".to_string(), count.clamp(1, 200).to_string()));
+    query.push(("sort-by".to_string(), "replay-date".to_string()));
+    query.push(("sort-dir".to_string(), "desc".to_string()));
+    reqwest::Url::parse_with_params(&format!("{}/replays", BASE_URL), &query).map_err(|e| e.to_string())
+}
+
+/// Who a site search could be: every id listed under a searched name (exact, ignoring
+/// case), plus any searched id, with how many of the replays each appears in. A name is
+/// not an identity, so the user confirms which of these are them.
+pub fn search_identities(replays: &[ReplayListItem], search: &SiteSearch) -> Vec<SearchIdentity> {
+    let names: Vec<String> = search.names.iter().map(|n| n.to_lowercase()).collect();
+    let mut found: Vec<SearchIdentity> = Vec::new();
+    for r in replays {
+        let mut seen = std::collections::HashSet::new();
+        for (id, name) in r.players() {
+            let by_name = name.is_some_and(|n| names.contains(&n.to_lowercase()));
+            if !(by_name || search.ids.contains(&id)) || !seen.insert(id.clone()) {
+                continue;
+            }
+            match found.iter_mut().find(|f| f.player_id == id) {
+                Some(f) => f.games += 1,
+                None => found.push(SearchIdentity { player_id: id, name: name.unwrap_or("").to_string(), games: 1 }),
+            }
+        }
+    }
+    found.sort_by(|a, b| b.games.cmp(&a.games).then(a.player_id.cmp(&b.player_id)));
+    found
 }
 
 /// Builds the `GET /replays` URL for a search.
@@ -159,15 +304,7 @@ impl BallchasingClient {
 /// ballchasing replays endpoint, since the API key is sent with the request.
 pub(crate) fn search_url(params: &ReplaySearchParams) -> Result<reqwest::Url, String> {
     if let Some(next) = &params.next {
-        let url = reqwest::Url::parse(next).map_err(|e| format!("Invalid next-page URL: {}", e))?;
-        let expected = reqwest::Url::parse(BASE_URL).map_err(|e| e.to_string())?;
-        let same_api = url.scheme() == "https"
-            && url.host_str() == expected.host_str()
-            && url.path().starts_with("/api/replays");
-        if !same_api {
-            return Err("Refusing to follow a next-page URL outside the ballchasing replays API.".to_string());
-        }
-        return Ok(url);
+        return checked_next(next);
     }
 
     let mut query: Vec<(&str, String)> = Vec::new();
@@ -266,6 +403,98 @@ mod tests {
         let next = "https://ballchasing.com/api/replays?after=abc&count=200";
         let url = search_url(&ReplaySearchParams { next: Some(next.into()), ..params() }).unwrap();
         assert_eq!(url.as_str(), next);
+    }
+
+    #[test]
+    fn site_search_from_player_name() {
+        let s = parse_site_search("https://ballchasing.com/?player-name=distortion2112").unwrap();
+        assert_eq!(s.names, vec!["distortion2112"]);
+        let url = site_search_url(&s, 30).unwrap();
+        assert_eq!(
+            url.as_str(),
+            "https://ballchasing.com/api/replays?player-name=distortion2112&playlist=ranked-doubles\
+             &count=30&sort-by=replay-date&sort-dir=desc"
+        );
+    }
+
+    #[test]
+    fn site_search_keeps_filters_and_reports_what_it_drops() {
+        let s = parse_site_search(
+            "https://www.ballchasing.com/?player-name=A+b&season=F24&match-result=win&sort-by=upload-date&foo=1&map=",
+        )
+        .unwrap();
+        assert_eq!(s.names, vec!["A b"]);
+        assert!(s.filters.contains(&("season".into(), "f24".into())));
+        assert!(!s.filters.iter().any(|(k, _)| k == "match-result" || k == "sort-by" || k == "map"));
+        assert_eq!(s.ignored.len(), 2, "{:?}", s.ignored);
+        assert!(s.ignored[0].starts_with("match-result=win"));
+    }
+
+    #[test]
+    fn site_search_playlist_must_allow_ranked_doubles() {
+        assert!(parse_site_search("https://ballchasing.com/?player-name=x&playlist=ranked-duels").is_err());
+        let s = parse_site_search("https://ballchasing.com/?player-name=x&playlist=ranked-duels&playlist=ranked-doubles").unwrap();
+        let playlists: Vec<_> = s.filters.iter().filter(|(k, _)| k == "playlist").collect();
+        assert_eq!(playlists, vec![&("playlist".to_string(), "ranked-doubles".to_string())]);
+    }
+
+    #[test]
+    fn site_search_rejects_other_sites_and_searches_without_a_player() {
+        for bad in [
+            "https://evil.example/?player-name=x",
+            "https://ballchasing.com.evil.example/?player-name=x",
+            "https://ballchasing.com/player/epic/x",
+            "ftp://ballchasing.com/?player-name=x",
+            "not a url",
+            "https://ballchasing.com/?season=f24",
+        ] {
+            assert!(parse_site_search(bad).is_err(), "{bad} should be rejected");
+        }
+    }
+
+    fn listed(id: &str, players: &[(&str, &str)]) -> ReplayListItem {
+        let team = |ps: &[(&str, &str)]| {
+            Some(crate::api::models::ListTeam {
+                players: Some(
+                    ps.iter()
+                        .map(|(pid, name)| {
+                            let (platform, id) = pid.split_once(':').unwrap();
+                            crate::api::models::ListPlayer {
+                                name: Some(name.to_string()),
+                                id: Some(crate::api::models::PlayerId {
+                                    platform: Some(platform.into()),
+                                    id: Some(id.into()),
+                                }),
+                            }
+                        })
+                        .collect(),
+                ),
+            })
+        };
+        serde_json::from_value::<ReplayListItem>(serde_json::json!({ "id": id }))
+            .map(|mut r| {
+                r.blue = team(&players[..1]);
+                r.orange = team(&players[1..]);
+                r
+            })
+            .unwrap()
+    }
+
+    #[test]
+    fn identities_count_exact_name_matches_only() {
+        let s = parse_site_search("https://ballchasing.com/?player-name=Distortion2112").unwrap();
+        let replays = vec![
+            listed("a", &[("epic:me", "distortion2112"), ("epic:x", "Other")]),
+            listed("b", &[("epic:me", "Distortion2112"), ("steam:1", "distortion2112x")]),
+            listed("c", &[("steam:old", "distortion2112"), ("epic:y", "Y")]),
+        ];
+        assert_eq!(
+            search_identities(&replays, &s),
+            vec![
+                SearchIdentity { player_id: "epic:me".into(), name: "distortion2112".into(), games: 2 },
+                SearchIdentity { player_id: "steam:old".into(), name: "distortion2112".into(), games: 1 },
+            ]
+        );
     }
 
     #[test]

@@ -53,6 +53,12 @@ fn skip(detail: &Value, reason: impl Into<String>) -> Skipped {
 /// (`GET /replays/{id}`), with every numeric stat flattened to `<group>_<stat>`
 /// and totals converted to per-minute.
 pub fn player_game(detail: &Value, player: &str) -> Result<GameStats, Skipped> {
+    player_game_any(detail, &[player])
+}
+
+/// As [`player_game`], for a player who may appear under any of `ids`
+/// (the same person on another platform account). The first match is used.
+pub fn player_game_any(detail: &Value, ids: &[&str]) -> Result<GameStats, Skipped> {
     if detail.get("status").and_then(Value::as_str) != Some("ok") {
         return Err(skip(detail, "replay still processing on ballchasing"));
     }
@@ -74,7 +80,7 @@ pub fn player_game(detail: &Value, player: &str) -> Result<GameStats, Skipped> {
                 p.pointer("/id/platform").and_then(Value::as_str).unwrap_or(""),
                 p.pointer("/id/id").and_then(Value::as_str).unwrap_or("")
             );
-            if id != player {
+            if !ids.contains(&id.as_str()) {
                 continue;
             }
             let played = p.get("end_time").and_then(Value::as_f64).unwrap_or(0.0)
@@ -132,14 +138,25 @@ impl PlayerAggregate {
     /// Builds from replay details. Replays without a usable game for the
     /// player are listed in `skipped` rather than failing the whole aggregate.
     pub fn from_details<'a>(player: &str, details: impl IntoIterator<Item = &'a Value>) -> Self {
+        Self::from_details_with_aliases(player, &[], details)
+    }
+
+    /// As [`from_details`](Self::from_details), also counting games played under
+    /// `aliases`: other ids the user confirmed are theirs. `player` stays the primary id.
+    pub fn from_details_with_aliases<'a>(
+        player: &str,
+        aliases: &[String],
+        details: impl IntoIterator<Item = &'a Value>,
+    ) -> Self {
+        let ids: Vec<&str> = std::iter::once(player).chain(aliases.iter().map(String::as_str)).collect();
         let mut games = Vec::new();
         let mut skipped = Vec::new();
         let mut name = None;
         for detail in details {
-            match player_game(detail, player) {
+            match player_game_any(detail, &ids) {
                 Ok(g) => {
                     if name.is_none() {
-                        name = find_name(detail, player);
+                        name = find_name(detail, &ids);
                     }
                     games.push(g);
                 }
@@ -170,7 +187,7 @@ impl PlayerAggregate {
     }
 }
 
-fn find_name(detail: &Value, player: &str) -> Option<String> {
+fn find_name(detail: &Value, ids: &[&str]) -> Option<String> {
     ["blue", "orange"].iter().find_map(|c| {
         detail.pointer(&format!("/{c}/players"))?.as_array()?.iter().find_map(|p| {
             let id = format!(
@@ -178,7 +195,7 @@ fn find_name(detail: &Value, player: &str) -> Option<String> {
                 p.pointer("/id/platform")?.as_str()?,
                 p.pointer("/id/id")?.as_str()?
             );
-            (id == player).then(|| p.get("name")?.as_str().map(str::to_string)).flatten()
+            ids.contains(&id.as_str()).then(|| p.get("name")?.as_str().map(str::to_string)).flatten()
         })
     })
 }
@@ -222,6 +239,18 @@ mod tests {
         assert_eq!(g.values["core_goals"], 1.0 / 5.0);
         assert!(!g.won);
         assert_eq!(g.score_diff, -1);
+    }
+
+    #[test]
+    fn aliases_count_as_the_same_player() {
+        let mut other = detail("ok", 0.0);
+        other["blue"]["players"][0]["id"] = json!({ "platform": "steam", "id": "old" });
+        let only_primary = PlayerAggregate::from_details("epic:me", [&detail("ok", 0.0), &other]);
+        assert_eq!(only_primary.game_count, 1);
+        let a = PlayerAggregate::from_details_with_aliases("epic:me", &["steam:old".into()], [&detail("ok", 0.0), &other]);
+        assert_eq!(a.game_count, 2);
+        assert_eq!(a.player, "epic:me");
+        assert!(a.skipped.is_empty());
     }
 
     #[test]

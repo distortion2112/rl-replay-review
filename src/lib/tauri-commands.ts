@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { ReplayData, PlayerData, ReplayListResponse, ReplaySearchParams } from "../types/replay";
+import type { ReplayData, PlayerData, ReplayListResponse, ReplaySearchParams, SiteSearchResult } from "../types/replay";
 import type { RotationInsight, BoostInsight, RateLimitStatus } from "../types/analysis";
 import type { FrameData } from "../types/frames";
 import type { RankLookup } from "../types/benchmark";
@@ -51,8 +51,20 @@ export async function getRankBenchmark(rank: string): Promise<RankLookup> {
  * A player's per-game stats across replays (cache-first). Listen for the
  * `aggregate-progress` event for progress.
  */
-export async function buildPlayerAggregate(playerId: string, replayIds: string[]): Promise<PlayerAggregate> {
-  return invoke("build_player_aggregate", { playerId, replayIds });
+export async function buildPlayerAggregate(
+  playerId: string,
+  replayIds: string[],
+  aliases: string[] = [],
+): Promise<PlayerAggregate> {
+  return invoke("build_player_aggregate", { playerId, replayIds, aliases });
+}
+
+/**
+ * Ranked 2v2 replays from a search pasted from ballchasing.com (newest first, up to
+ * `count`), plus every id that appears under the searched name.
+ */
+export async function searchSiteReplays(url: string, count: number): Promise<SiteSearchResult> {
+  return invoke("search_site_replays", { url, count });
 }
 
 /** Compares an aggregate to the benchmarks at `rank` (e.g. "champion-1") and the tier above. */

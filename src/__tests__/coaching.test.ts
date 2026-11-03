@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RANKS, findingGroup, parsePlayerInput, rankName } from "../lib/coaching";
+import { RANKS, findingGroup, isSiteSearchUrl, mergeReplays, nameSearchText, nameSearchUrl, parsePlayerInput, rankName } from "../lib/coaching";
 
 describe("parsePlayerInput", () => {
   it.each([
@@ -37,4 +37,55 @@ describe("ranks", () => {
 
 it("groups finding ids", () => {
   expect(findingGroup("boost.percent_zero_boost")).toBe("boost");
+});
+
+describe("isSiteSearchUrl", () => {
+  it("accepts ballchasing replay searches for a player", () => {
+    expect(isSiteSearchUrl("https://ballchasing.com/?player-name=distortion2112")).toBe(true);
+    expect(isSiteSearchUrl(" https://www.ballchasing.com/?season=f24&player-id=epic:abc ")).toBe(true);
+  });
+  it("rejects player pages, other sites and searches without a player", () => {
+    expect(isSiteSearchUrl("https://ballchasing.com/player/epic/abc")).toBe(false);
+    expect(isSiteSearchUrl("https://evil.example/?player-name=x")).toBe(false);
+    expect(isSiteSearchUrl("https://ballchasing.com/?season=f24")).toBe(false);
+    expect(isSiteSearchUrl("epic:abc")).toBe(false);
+  });
+});
+
+describe("mergeReplays", () => {
+  const r = (id: string, date: string, ...players: string[]) => ({
+    id,
+    date,
+    blue: { players: players.map((p) => ({ id: { platform: p.split(":")[0], id: p.split(":")[1] } })) },
+  });
+  it("dedupes, drops replays without the player's accounts, sorts newest first and caps", () => {
+    const out = mergeReplays(
+      [
+        [r("a", "2026-10-01T00:00:00Z", "epic:me"), r("b", "2026-10-03T00:00:00Z", "epic:me")],
+        [r("a", "2026-10-01T00:00:00Z", "epic:me"), r("c", "2026-10-02T00:00:00Z", "steam:alt"), r("x", "2026-10-09T00:00:00Z", "epic:other")],
+      ],
+      ["epic:me", "steam:alt"],
+      2,
+    );
+    expect(out.map((o) => o.id)).toEqual(["b", "c"]);
+  });
+  it("keeps replays a search lists without players (the aggregate checks them)", () => {
+    expect(mergeReplays([[{ id: "a" }]], ["epic:me"], 5).map((o) => o.id)).toEqual(["a"]);
+  });
+});
+
+describe("nameSearchUrl / nameSearchText", () => {
+  it("searches a typed name and keeps a pasted search", () => {
+    expect(nameSearchUrl(" distortion 2112 ")).toBe("https://ballchasing.com/?player-name=distortion%202112");
+    const pasted = "https://ballchasing.com/?player-name=x&season=f24";
+    expect(nameSearchUrl(pasted)).toBe(pasted);
+    expect(nameSearchUrl("")).toBeNull();
+    expect(nameSearchUrl("https://ballchasing.com/player/epic/abc")).toBeNull();
+    expect(nameSearchUrl("https://evil.example/?player-name=x")).toBeNull();
+  });
+  it("shows a saved name search as the bare name, anything richer as the link", () => {
+    expect(nameSearchText(nameSearchUrl("distortion 2112")!)).toBe("distortion 2112");
+    const rich = "https://ballchasing.com/?player-name=x&season=f24";
+    expect(nameSearchText(rich)).toBe(rich);
+  });
 });

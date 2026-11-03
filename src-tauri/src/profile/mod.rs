@@ -4,5 +4,5 @@
 pub mod aggregate;
 pub mod playstyle;
 
-pub use aggregate::{player_game, stat_unit, GameStats, PlayerAggregate, Skipped};
+pub use aggregate::{player_game, player_game_any, stat_unit, GameStats, PlayerAggregate, Skipped};
 pub use playstyle::{compute_playstyle, Axis, AxisScore, PlaystyleProfile};

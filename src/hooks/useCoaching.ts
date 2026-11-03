@@ -6,7 +6,9 @@ import {
   generateCoachingReport,
   renderCoachingReport,
   searchPlayerReplays,
+  searchSiteReplays,
 } from "../lib/tauri-commands";
+import { mergeReplays } from "../lib/coaching";
 import type { AggregateProgress, PlayerAggregate, PlaystyleProfile } from "../types/profile";
 import type { CoachingReport, EvidencePack } from "../types/coaching";
 
@@ -19,6 +21,12 @@ export interface CoachingProfile {
   rank: string;
   /** how many recent ranked 2v2 games to analyze */
   games: number;
+  /** a ballchasing.com search whose replays are pulled in too, e.g. ?player-name=… */
+  searchUrl?: string;
+  /** other "<platform>:<id>"s the player confirmed are theirs (from the search) */
+  aliases?: string[];
+  /** true when `playerId` was picked from the search's accounts rather than typed */
+  idFromSearch?: boolean;
 }
 
 export type CoachingStatus = "idle" | "searching" | "aggregating" | "analyzing" | "done" | "error";
@@ -83,14 +91,19 @@ export const useCoachingStore = create<CoachingStore>((set, get) => ({
     if (!profile) return;
     set({ status: "searching", error: null, progress: null });
     try {
-      const found = await searchPlayerReplays({
-        player_id: profile.playerId,
-        playlist: "ranked-doubles",
-        count: profile.games,
-        sort_by: "replay-date",
-        sort_dir: "desc",
-      });
-      const ids = found.list.map((r) => r.id);
+      const aliases = profile.aliases ?? [];
+      const [byId, bySearch] = await Promise.all([
+        searchPlayerReplays({
+          player_id: profile.playerId,
+          playlist: "ranked-doubles",
+          count: profile.games,
+          sort_by: "replay-date",
+          sort_dir: "desc",
+        }),
+        profile.searchUrl ? searchSiteReplays(profile.searchUrl, profile.games) : Promise.resolve(null),
+      ]);
+      const merged = mergeReplays([byId.list, bySearch?.replays ?? []], [profile.playerId, ...aliases], profile.games);
+      const ids = merged.map((r) => r.id);
       if (ids.length === 0) {
         throw new Error(
           "No ranked 2v2 games found on ballchasing for this player. Replays need to be uploaded to ballchasing (public or unlisted) to be analyzed.",
@@ -103,7 +116,7 @@ export const useCoachingStore = create<CoachingStore>((set, get) => ({
       );
       let aggregate: PlayerAggregate;
       try {
-        aggregate = await buildPlayerAggregate(profile.playerId, ids);
+        aggregate = await buildPlayerAggregate(profile.playerId, ids, aliases);
       } finally {
         unlisten();
       }

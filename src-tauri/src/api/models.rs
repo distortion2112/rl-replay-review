@@ -183,6 +183,52 @@ pub struct ReplayListItem {
     pub max_rank: Option<RankInfo>,
     pub season: Option<u32>,
     pub replay_title: Option<String>,
+    /// Who played, as listed by search (name and platform id only, no stats)
+    pub blue: Option<ListTeam>,
+    pub orange: Option<ListTeam>,
+}
+
+impl ReplayListItem {
+    /// `<platform>:<id>` and name of every listed player.
+    pub fn players(&self) -> impl Iterator<Item = (String, Option<&str>)> {
+        [&self.blue, &self.orange]
+            .into_iter()
+            .flatten()
+            .flat_map(|t| t.players.iter().flatten())
+            .filter_map(|p| {
+                let id = p.id.as_ref()?;
+                Some((format!("{}:{}", id.platform.as_deref()?, id.id.as_deref()?), p.name.as_deref()))
+            })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListTeam {
+    pub players: Option<Vec<ListPlayer>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListPlayer {
+    pub name: Option<String>,
+    pub id: Option<PlayerId>,
+}
+
+/// Replays found by a pasted ballchasing.com search, and who they could be.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SiteSearchResult {
+    pub replays: Vec<ReplayListItem>,
+    /// Every platform id that appears under a searched name (or a searched id), most games first
+    pub identities: Vec<SearchIdentity>,
+    /// Filters from the pasted search that were not applied, with the reason
+    pub ignored: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SearchIdentity {
+    /// `<platform>:<id>`
+    pub player_id: String,
+    pub name: String,
+    pub games: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
