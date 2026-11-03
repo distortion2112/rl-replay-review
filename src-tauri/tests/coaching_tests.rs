@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use rl_replay_review_lib::benchmark::parse;
-use rl_replay_review_lib::coaching::{generate_report, FindingKind};
+use rl_replay_review_lib::coaching::{generate_report, render, verify, FindingKind};
 use rl_replay_review_lib::profile::{GameStats, PlayerAggregate};
 
 /// Two tiers. Quantiles p5..p95 per stat; the target tier is "better" on every stat.
@@ -179,4 +179,119 @@ fn real_benchmarks_produce_finite_priorities_and_skip_rare_events() {
         let f = pack.findings.iter().find(|f| &f.id == id).unwrap();
         assert!(f.rank_signal >= rl_replay_review_lib::coaching::engine::MIN_RANK_SIGNAL, "{id} {}", f.rank_signal);
     }
+}
+
+fn sample_pack() -> rl_replay_review_lib::coaching::EvidencePack {
+    let a = player(20, &[("boost_bpm", 330.0, 4.0), ("core_saves", 0.8, 0.02), ("boost_percent_zero_boost", 10.0, 0.5)]);
+    generate_report(&a, "diamond-2", &bench()).unwrap()
+}
+
+#[test]
+fn templates_render_every_kind_and_pass_the_verifier() {
+    let mut pack = sample_pack();
+    // Add an uncertain finding (on a stat the sample pack has no finding for)
+    let noisy = generate_report(&player(10, &[("boost_percent_zero_boost", 14.0, 12.0)]), "diamond-2", &bench()).unwrap();
+    assert!(noisy.findings.iter().any(|f| f.kind == FindingKind::Uncertain), "{:?}", noisy.findings);
+    pack.findings.extend(noisy.findings);
+    let report = render(&pack);
+    let kinds: Vec<FindingKind> = report.items.iter().map(|i| i.kind).collect();
+    for k in [FindingKind::Weakness, FindingKind::Strength, FindingKind::Uncertain] {
+        assert!(kinds.contains(&k), "{k:?} not rendered");
+    }
+    assert!(report.items[0].top && report.items[0].kind == FindingKind::Weakness);
+    assert!(report.items[0].action.is_some(), "boost.bpm has mapped advice");
+    for text in std::iter::once(&report.summary).chain(report.items.iter().flat_map(|i| [&i.title, &i.explanation])) {
+        let v = verify(text, &pack, false);
+        assert!(v.is_empty(), "template text failed verification: {text:?} {v:?}");
+    }
+}
+
+#[test]
+fn not_enough_data_summary() {
+    let pack = generate_report(&player(9, &[]), "diamond-2", &bench()).unwrap();
+    let report = render(&pack);
+    assert!(report.items.is_empty());
+    assert!(report.summary.contains("at least 10 games") && report.summary.contains("there are 9"), "{}", report.summary);
+    assert!(verify(&report.summary, &pack, false).is_empty());
+}
+
+#[test]
+fn verifier_rejects_bad_narration() {
+    let pack = sample_pack();
+    let good = "Your boost use is 344 per minute [boost.bpm], short of Diamond 3 players around 420 [boost.bpm].";
+    assert!(verify(good, &pack, true).is_empty(), "{:?}", verify(good, &pack, true));
+
+    let rules = |text: &str| verify(text, &pack, true).into_iter().map(|v| v.rule).collect::<Vec<_>>();
+    assert_eq!(rules("Your boost use is 512 per minute [boost.bpm]."), vec!["unknown_number"]);
+    assert_eq!(rules("Champion 1 players use 344 boost per minute [boost.bpm]."), vec!["extra_tier"]);
+    assert_eq!(rules("You use 344 boost per minute [boost.made_up]."), vec!["unknown_citation"]);
+    assert_eq!(rules("You use 344 boost per minute."), vec!["uncited_claim"]);
+    // Rounding: 344 shown as 344.0 is fine, 344.4 is not (value is exactly 344)
+    assert!(rules("Boost use 344.0 per minute [boost.bpm].").is_empty());
+    assert_eq!(rules("Boost use 344.4 per minute [boost.bpm]."), vec!["unknown_number"]);
+}
+
+#[test]
+fn every_benchmark_stat_renders_cleanly() {
+    // A finding of each kind for every stat in the shipped benchmarks: readable
+    // labels (no key fragments or digits) and nothing the verifier rejects.
+    use rl_replay_review_lib::coaching::{EvidencePack, Finding};
+    let path = format!("{}/resources/benchmarks.json", env!("CARGO_MANIFEST_DIR"));
+    let bench = parse(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let mut findings = Vec::new();
+    for (i, stat) in bench.stats.keys().enumerate() {
+        let kind = [FindingKind::Weakness, FindingKind::Strength, FindingKind::Uncertain][i % 3];
+        findings.push(Finding {
+            id: stat.replacen('_', ".", 1),
+            stat_key: stat.clone(),
+            kind,
+            value: 1234.567,
+            interval: (1200.25, 1270.75),
+            pct_current_tier: 12.4,
+            pct_target_tier: 8.6,
+            current_tier_median: 1500.5,
+            target_tier_median: 1600.25,
+            higher_is_better: true,
+            rank_signal: 0.5,
+            priority: 1.0,
+            games: 30,
+            clips: vec![],
+        });
+    }
+    let pack = EvidencePack {
+        schema_version: 1,
+        player: rl_replay_review_lib::coaching::PlayerRef { player: "epic:x".into(), name: None },
+        current_tier: "grand-champion-1".into(),
+        current_tier_used: "grand-champion-1".into(),
+        target_tier: "grand-champion-2".into(),
+        target_tier_used: "grand-champion-2".into(),
+        games: 30,
+        enough_data: true,
+        min_games: 10,
+        findings,
+        top_strengths: vec![],
+        top_weaknesses: vec![],
+        benchmark_seasons: vec!["f24".into()],
+    };
+    let report = render(&pack);
+    assert_eq!(report.items.len(), bench.stats.len());
+    for item in &report.items {
+        for text in [&item.title, &item.explanation] {
+            assert!(!text.contains('_'), "key fragment in {text:?}");
+            let v = verify(text, &pack, false);
+            assert!(v.is_empty(), "{}: {text:?} {v:?}", item.finding_id);
+        }
+    }
+}
+
+#[test]
+fn weak_signal_findings_are_described_as_unusual() {
+    // demo_inflicted has rank signal 0.02 in the synthetic benchmarks
+    let pack = generate_report(&player(40, &[("demo_inflicted", 0.0, 0.0)]), "diamond-2", &bench()).unwrap();
+    let report = render(&pack);
+    let item = report.items.iter().find(|i| i.finding_id == "demo.inflicted").unwrap();
+    assert!(item.title.starts_with("Unusual for your rank"), "{}", item.title);
+    assert!(item.explanation.contains("may simply be your style"));
+    assert!(item.action.is_none());
+    assert!(verify(&item.explanation, &pack, false).is_empty());
 }

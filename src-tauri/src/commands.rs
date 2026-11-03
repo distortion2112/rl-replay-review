@@ -6,7 +6,7 @@ use tauri_plugin_store::StoreExt;
 
 use crate::api::ballchasing::BallchasingClient;
 use crate::benchmark::{self, Benchmarks, RankLookup};
-use crate::coaching::{self, EvidencePack};
+use crate::coaching::{self, CoachingReport, EvidencePack};
 use crate::profile::{self, PlayerAggregate, PlaystyleProfile, Skipped};
 use crate::api::models::{PlayerData, ReplayData, ReplayListResponse, ReplaySearchParams};
 use crate::api::rate_limit::{RateLimitStatus, RateLimiter};
@@ -256,4 +256,11 @@ pub fn compute_playstyle(
 ) -> Result<PlaystyleProfile, String> {
     let data = load_benchmarks(&app, &cache)?;
     profile::compute_playstyle(&aggregate, &rank, &data)
+}
+
+/// Readable coaching from an evidence pack, using deterministic templates.
+/// Every number shown comes from the pack.
+#[tauri::command]
+pub fn render_coaching_report(pack: EvidencePack) -> CoachingReport {
+    coaching::render(&pack)
 }
