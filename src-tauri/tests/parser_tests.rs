@@ -341,13 +341,17 @@ fn position_copy_semantics() {
     assert_eq!(pos.z, pos2.z);
 }
 
-#[test]
-fn parse_ranked_2v2_players_tracked_across_car_respawns() {
-    // Car actor IDs are recycled across respawns and can move between players.
-    // A full-match player must appear in nearly every frame; only demo respawns
-    // (~3s each) should leave gaps.
-    let data = load_fixture("ranked-2v2.replay");
-    let fd = parse_replay(&data).unwrap();
+// --- Player identity and event attribution (run against every fixture) ---
+//
+// `unranked-2v2-s17.replay` (ballchasing 542d459c-a3a4-451e-a06b-017c77a74a70, season 17,
+// all 4 players present the full match) exposed recycled car actor IDs moving between
+// players, touch credit going to the wrong player on 2 of 7 goals, and repeated demos.
+
+/// Car actor IDs are recycled across respawns and can move between players. A
+/// full-match player must appear in nearly every frame; only demo respawns
+/// (~3s each) should leave gaps.
+fn assert_players_tracked_across_respawns(fixture: &str) {
+    let fd = parse_replay(&load_fixture(fixture)).unwrap();
     let mut present = vec![0usize; fd.players.len()];
     for frame in &fd.frames {
         for p in &frame.players {
@@ -356,20 +360,19 @@ fn parse_ranked_2v2_players_tracked_across_car_respawns() {
     }
     for (i, count) in present.iter().enumerate() {
         let ratio = *count as f64 / fd.frames.len() as f64;
-        assert!(ratio > 0.9, "{} present in only {:.0}% of frames", fd.players[i].name, ratio * 100.0);
+        assert!(ratio > 0.9, "{}: {} present in only {:.0}% of frames", fixture, fd.players[i].name, ratio * 100.0);
     }
 }
 
-#[test]
-fn parse_ranked_2v2_goal_credited_to_last_scoring_team_touch() {
-    // Rocket League credits a goal to the last touch by the scoring team. Touches
-    // attributed through stale car->player links fail this.
+/// Rocket League credits a goal to the last touch by the scoring team. Touches
+/// attributed through stale car->player links fail this.
+fn assert_goals_credited_to_last_scoring_team_touch(fixture: &str) {
     use boxcars::{HeaderProp, ParserBuilder};
-    let data = load_fixture("ranked-2v2.replay");
+    let data = load_fixture(fixture);
     let fd = parse_replay(&data).unwrap();
     let header = ParserBuilder::new(&data).never_parse_network_data().parse().unwrap();
     let Some((_, HeaderProp::Array(goals))) = header.properties.iter().find(|(k, _)| k == "Goals") else {
-        panic!("Fixture has no Goals header");
+        panic!("{}: no Goals header", fixture);
     };
     assert!(!goals.is_empty());
     for g in goals {
@@ -383,23 +386,62 @@ fn parse_ranked_2v2_goal_credited_to_last_scoring_team_touch() {
         }).unwrap();
         let team = fd.players.iter().find(|p| p.name == scorer).unwrap().team;
         let last = fd.touches.iter().rev().find(|t| t.frame <= frame && t.team == team).unwrap();
-        assert_eq!(fd.players[last.player_index].name, scorer, "Goal at frame {} credited to wrong player", frame);
+        assert_eq!(fd.players[last.player_index].name, scorer, "{}: goal at frame {} credited to wrong player", fixture, frame);
+    }
+}
+
+/// A demolished car's PRI link is cleared in the demo frame, and a respawned car's
+/// initial replication repeats the last demo. Neither may lose the victim or
+/// produce a duplicate.
+fn assert_demos_unique_with_victims(fixture: &str) {
+    let fd = parse_replay(&load_fixture(fixture)).unwrap();
+    assert!(!fd.demos.is_empty(), "{}: no demos detected", fixture);
+    for d in &fd.demos {
+        assert!(d.victim_index.is_some(), "{}: demo at {:.1}s has no victim", fixture, d.time);
+    }
+    for pair in fd.demos.windows(2) {
+        let same = pair[0].attacker_index == pair[1].attacker_index && pair[0].victim_index == pair[1].victim_index;
+        assert!(!(same && pair[1].time - pair[0].time < 5.0), "{}: duplicate demo at {:.1}s and {:.1}s", fixture, pair[0].time, pair[1].time);
     }
 }
 
 #[test]
-fn parse_ranked_2v2_demos_unique_with_victims() {
-    // A demolished car's PRI link is cleared in the demo frame, and a respawned car's
-    // initial replication repeats the last demo. Neither may lose the victim or
-    // produce a duplicate.
-    let data = load_fixture("ranked-2v2.replay");
-    let fd = parse_replay(&data).unwrap();
-    assert!(!fd.demos.is_empty(), "No demos detected");
-    for d in &fd.demos {
-        assert!(d.victim_index.is_some(), "Demo at {:.1}s has no victim", d.time);
-    }
-    for pair in fd.demos.windows(2) {
-        let same = pair[0].attacker_index == pair[1].attacker_index && pair[0].victim_index == pair[1].victim_index;
-        assert!(!(same && pair[1].time - pair[0].time < 5.0), "Duplicate demo at {:.1}s and {:.1}s", pair[0].time, pair[1].time);
-    }
+fn ranked_2v2_players_tracked_across_respawns() {
+    assert_players_tracked_across_respawns("ranked-2v2.replay");
+}
+
+#[test]
+fn ranked_2v2_goals_credited_to_last_scoring_team_touch() {
+    assert_goals_credited_to_last_scoring_team_touch("ranked-2v2.replay");
+}
+
+#[test]
+fn ranked_2v2_demos_unique_with_victims() {
+    assert_demos_unique_with_victims("ranked-2v2.replay");
+}
+
+#[test]
+fn s17_players_tracked_across_respawns() {
+    assert_players_tracked_across_respawns("unranked-2v2-s17.replay");
+}
+
+#[test]
+fn s17_goals_credited_to_last_scoring_team_touch() {
+    assert_goals_credited_to_last_scoring_team_touch("unranked-2v2-s17.replay");
+}
+
+#[test]
+fn s17_demos_unique_with_victims() {
+    assert_demos_unique_with_victims("unranked-2v2-s17.replay");
+}
+
+#[test]
+fn s17_demos_match_ballchasing() {
+    // ballchasing.com stats for this replay: SooP and distortion2112 inflicted one
+    // demo each; FourAces. and DuckSandwich took one each.
+    let fd = parse_replay(&load_fixture("unranked-2v2-s17.replay")).unwrap();
+    let name = |i: Option<usize>| i.map(|i| fd.players[i].name.as_str()).unwrap_or("?");
+    let mut demos: Vec<(&str, &str)> = fd.demos.iter().map(|d| (name(d.attacker_index), name(d.victim_index))).collect();
+    demos.sort();
+    assert_eq!(demos, vec![("SooP", "DuckSandwich"), ("distortion2112", "FourAces.")]);
 }
