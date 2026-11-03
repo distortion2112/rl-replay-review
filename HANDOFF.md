@@ -14,6 +14,8 @@ Everything else (#50, #51, #53, #54, #55) is already merged.
 
 ## Set up the new machine
 
+Prerequisites (versions this was last tested with): Node 26, Rust 1.98 (stable, 2024 edition), Python 3.14 (only for `tools/`, stdlib only), `gh` logged in as `distortion2112`. On macOS, Xcode command line tools; on Linux/WSL, the Tauri v2 system packages.
+
 ```bash
 git clone https://github.com/distortion2112/rl-replay-review && cd rl-replay-review
 git checkout feature/coaching-site-search      # contains #56 + #58
@@ -36,6 +38,27 @@ gh release delete tmp-benchmark-data --yes      # once copied
 ```
 
 The app itself uses `src-tauri/resources/benchmarks.json`, which is committed.
+
+The Python tools read the ballchasing key from `BALLCHASING_API_KEY`, or from the app's saved settings once you've entered it in the app. The account is on the **Diamond** patron tier; the collector detects the tier and paces itself. Never print the key.
+
+Verified 2026-11-03 on a fresh clone of this branch with a clean build: `cargo test` (114 passed), `cargo clippy --all-targets -D warnings`, `tsc`, `vitest` (49 passed), `npm run build`, the release zip restore, `collector.py status`, and `test_collector` (20 passed).
+
+## Unfinished work outside epic #59
+
+**Benchmark anchors, round 2 (waiting on a manual step).** Current-season (f24) tiers are labeled by ranks looked up by hand on tracker.gg ("anchors"); 47 are imported. Diamond and SSL need more before they switch from f22 to f24. The 21-player list is in the restored data:
+
+```bash
+cd tools/benchmark-generator
+python3 anchors.py lookup data/anchor_candidates_f24_round2.csv   # opens each tracker link; type the rank shown
+python3 anchors.py import data/anchor_candidates_f24_round2.csv
+python3 anchors.py collect --season f24                           # fetch their games (needs the API key)
+python3 benchmarks.py --season f22 --anchor-season f24 --min-anchors 3 --out data/benchmarks.json
+cp data/benchmarks.json ../../src-tauri/resources/benchmarks.json # then cargo test, and open a PR
+```
+
+Lookups are manual on purpose: automating tracker.gg means getting past Cloudflare, which breaks its terms. Bronze/Silver/Gold tiers are deferred (anchors aren't reliable there and there's no rank source yet). Retention: keep only seasons n and n−1 plus the newest season with ballchasing ranks (`collector.py prune`).
+
+**#11, second half: the optional LLM narrator.** Templates (`coaching/text.rs`) and the verifier (`coaching/verify.rs`) are merged. The narrator would rewrite template text, and `verify(text, pack, true)` must pass or the app falls back to the templates.
 
 ## What's next: epic #59, situational coaching
 

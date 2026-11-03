@@ -186,7 +186,7 @@ Run through this list at the **start of every session**, in order:
 
 1. **Read this file.** You're doing it now. Good.
 2. **Check GitHub Issues.** Look for issues assigned to you or unassigned issues labeled `priority:high` or `priority:medium`. This is your work queue.
-3. **Check for handoff notes.** Look in `/home/distortion2112/.claude/projects/-home-distortion2112-code-rl-replay-review/memory/` for any `handoff.md` or recent updates to `MEMORY.md`. Previous agents leave context there when a session ends mid-work.
+3. **Check for handoff notes.** If `HANDOFF.md` exists at the repo root (check the open PR branches too), read it first. Also look in `/home/distortion2112/.claude/projects/-home-distortion2112-code-rl-replay-review/memory/` for any `handoff.md` or recent updates to `MEMORY.md`. Previous agents leave context there when a session ends mid-work.
 4. **Check open PRs.** If there's a PR in progress from a previous session, pick it up — don't start a duplicate branch.
 5. **Check recent commits on `main`.** Run `git log --oneline -10` to understand what just landed and avoid conflicts.
 6. **Pick one issue.** Assign yourself, create a branch (`feature/`, `fix/`, `chore/`), and start work. One issue at a time.
