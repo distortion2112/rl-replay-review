@@ -19,7 +19,8 @@ import { TimelineScrubber } from "./components/timeline/TimelineScrubber";
 import { PlaybackControls } from "./components/timeline/PlaybackControls";
 import { GoalReplays } from "./components/timeline/GoalReplays";
 import { usePlaybackStore } from "./hooks/usePlayback";
-import { RotateCcw, Trophy } from "lucide-react";
+import { GraduationCap, RotateCcw, Trophy } from "lucide-react";
+import { CoachingView } from "./components/coaching/CoachingView";
 import { useKeyboard } from "./hooks/useKeyboard";
 import "./styles.css";
 
@@ -39,6 +40,7 @@ function App() {
   const heatmapGrid = useHeatmapGrid(heatmapState.mode, heatmapState.selectedIdx);
   const [showTrails, setShowTrails] = useState(true);
   const [trailSeconds, setTrailSeconds] = useState(5);
+  const [view, setView] = useState<"replay" | "coaching">("replay");
 
   useKeyboard();
 
@@ -69,11 +71,30 @@ function App() {
             <h1 className="text-lg font-bold">RL Replay Review</h1>
           </div>
 
-          <div className="flex-1 max-w-xl">
-            <ReplayInput />
-          </div>
+          <nav className="flex gap-1 shrink-0" aria-label="Views">
+            {([
+              ["replay", "Replay Review", Trophy],
+              ["coaching", "Coaching", GraduationCap],
+            ] as const).map(([key, label, Icon]) => (
+              <button
+                key={key}
+                onClick={() => setView(key)}
+                aria-current={view === key ? "page" : undefined}
+                className={`px-3 py-1 rounded text-xs font-medium flex items-center gap-1 transition ${
+                  view === key
+                    ? "bg-[var(--accent-blue)] text-white"
+                    : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card)]"
+                }`}
+              >
+                <Icon className="w-3 h-3" />
+                {label}
+              </button>
+            ))}
+          </nav>
 
-          {replay && (
+          <div className="flex-1 max-w-xl">{view === "replay" && <ReplayInput />}</div>
+
+          {view === "replay" && replay && (
             <div className="text-xs text-[var(--text-secondary)] shrink-0 text-right">
               <div className="font-medium text-[var(--text-primary)]">
                 {replay.title ?? replay.id}
@@ -92,7 +113,11 @@ function App() {
         </div>
       </header>
 
-      {replay ? (
+      {view === "coaching" ? (
+        <div className="flex-1 min-h-0">
+          <CoachingView />
+        </div>
+      ) : replay ? (
         <>
           {/* Score bar + player selector - always visible */}
           <div className="shrink-0 bg-[var(--bg-primary)] border-b border-gray-800/30 px-4 py-2">
