@@ -56,6 +56,14 @@ export const useReplayStore = create<ReplayStore>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const id = extractReplayId(input);
+      if (!id) {
+        set({
+          error:
+            "Couldn't find a replay ID. Paste a ballchasing.com replay link or its ID (like 542d459c-a3a4-451e-a06b-017c77a74a70).",
+          loading: false,
+        });
+        return;
+      }
       const replay = await fetchReplay(id);
       set({ replay, loading: false });
 

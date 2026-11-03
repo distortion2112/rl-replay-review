@@ -43,11 +43,15 @@ export async function getRateLimitStatus(): Promise<RateLimitStatus> {
   return invoke("get_rate_limit_status");
 }
 
-export function extractReplayId(input: string): string {
-  const trimmed = input.trim();
-  // Handle full URLs like https://ballchasing.com/replay/abc123
-  const urlMatch = trimmed.match(/ballchasing\.com\/replay\/([a-zA-Z0-9-]+)/);
-  if (urlMatch) return urlMatch[1];
-  // Otherwise treat as raw ID
-  return trimmed;
+/** ballchasing replay IDs are UUIDs. */
+const REPLAY_ID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
+/**
+ * Finds a ballchasing replay ID anywhere in pasted text: a bare ID, a replay
+ * page link, an API link (`/api/replays/<id>`), or text that merely contains
+ * one. Returns null when there is none, so garbage is never sent to the API.
+ */
+export function extractReplayId(input: string): string | null {
+  const match = input.match(REPLAY_ID);
+  return match ? match[0].toLowerCase() : null;
 }
