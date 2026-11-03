@@ -6,6 +6,7 @@ use tauri_plugin_store::StoreExt;
 
 use crate::api::ballchasing::BallchasingClient;
 use crate::benchmark::{self, Benchmarks, RankLookup};
+use crate::coaching::{self, EvidencePack};
 use crate::profile::{PlayerAggregate, Skipped};
 use crate::api::models::{PlayerData, ReplayData, ReplayListResponse, ReplaySearchParams};
 use crate::api::rate_limit::{RateLimitStatus, RateLimiter};
@@ -229,4 +230,17 @@ pub async fn build_player_aggregate(
     let mut aggregate = PlayerAggregate::from_details(&player_id, details.iter());
     aggregate.skipped.extend(fetch_errors);
     Ok(aggregate)
+}
+
+/// Evidence pack comparing `aggregate` to the benchmarks at `rank` and the tier
+/// above it. Fewer than 10 games returns a pack with `enough_data: false`.
+#[tauri::command]
+pub fn generate_coaching_report(
+    app: tauri::AppHandle,
+    cache: State<'_, BenchmarkCache>,
+    aggregate: PlayerAggregate,
+    rank: String,
+) -> Result<EvidencePack, String> {
+    let data = load_benchmarks(&app, &cache)?;
+    coaching::generate_report(&aggregate, &rank, &data)
 }

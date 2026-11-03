@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "player": {
+    "player": "epic:test",
+    "name": "Tester"
+  },
+  "current_tier": "diamond-2",
+  "current_tier_used": "diamond-2",
+  "target_tier": "diamond-3",
+  "target_tier_used": "diamond-3",
+  "games": 20,
+  "enough_data": true,
+  "min_games": 10,
+  "findings": [
+    {
+      "id": "boost.bpm",
+      "stat_key": "boost_bpm",
+      "kind": "weakness",
+      "value": 344.0,
+      "interval": [
+        343.05913854550874,
+        344.94086145449126
+      ],
+      "pct_current_tier": 6.0,
+      "pct_target_tier": 1.0,
+      "current_tier_median": 400.0,
+      "target_tier_median": 420.0,
+      "higher_is_better": true,
+      "rank_signal": 0.5,
+      "priority": 0.95,
+      "games": 20,
+      "clips": []
+    },
+    {
+      "id": "core.saves",
+      "stat_key": "core_saves",
+      "kind": "strength",
+      "value": 0.7400000000000001,
+      "interval": [
+        0.7352956927275439,
+        0.7447043072724563
+      ],
+      "pct_current_tier": 100.0,
+      "pct_target_tier": 99.0,
+      "current_tier_median": 0.5,
+      "target_tier_median": 0.55,
+      "higher_is_better": true,
+      "rank_signal": 0.3,
+      "priority": 0.7200000000000001,
+      "games": 20,
+      "clips": []
+    }
+  ],
+  "top_strengths": [
+    "core.saves"
+  ],
+  "top_weaknesses": [
+    "boost.bpm"
+  ],
+  "benchmark_seasons": [
+    "f24"
+  ]
+}

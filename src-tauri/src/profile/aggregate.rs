@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::benchmark::StatUnit;
@@ -23,7 +23,7 @@ pub fn stat_unit(name: &str) -> StatUnit {
 }
 
 /// One game for one player. `values` are keyed `<group>_<stat>` in benchmark units.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameStats {
     pub replay_id: String,
     pub date: Option<String>,
@@ -35,7 +35,7 @@ pub struct GameStats {
     pub values: BTreeMap<String, f64>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Skipped {
     pub replay_id: String,
     pub reason: String,
@@ -115,7 +115,7 @@ pub fn player_game(detail: &Value, player: &str) -> Result<GameStats, Skipped> {
 }
 
 /// A player's games, plus which replays were left out and why.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlayerAggregate {
     /// `<platform>:<id>`
     pub player: String,
