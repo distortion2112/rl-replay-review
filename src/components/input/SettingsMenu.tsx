@@ -2,7 +2,21 @@ import { useState, useEffect } from "react";
 import { Settings, X, KeyRound, Trash2, Activity } from "lucide-react";
 import { useReplayStore } from "../../hooks/useReplay";
 import { getRateLimitStatus } from "../../lib/tauri-commands";
-import type { RateLimitStatus } from "../../types/analysis";
+import type { ApiTier, EndpointStatus, RateLimitStatus } from "../../types/analysis";
+
+const TIER_NAMES: Record<ApiTier, string> = {
+  regular: "Regular",
+  gold: "Gold",
+  diamond: "Diamond",
+  champion: "Champion",
+  gc: "GC",
+};
+
+const ENDPOINT_NAMES: Record<EndpointStatus["endpoint"], string> = {
+  list: "Replay search",
+  get: "Replay stats",
+  file: "Replay downloads",
+};
 
 export function SettingsMenu() {
   const [open, setOpen] = useState(false);
@@ -43,11 +57,9 @@ export function SettingsMenu() {
     );
   }
 
-  const budgetPct = rateLimit
-    ? (rateLimit.calls_used / rateLimit.weekly_budget) * 100
-    : 0;
-  const budgetColor =
-    budgetPct > 80 ? "var(--accent-red)" : budgetPct > 50 ? "var(--accent-orange)" : "var(--accent-green, #22c55e)";
+  const tierName = rateLimit
+    ? TIER_NAMES[rateLimit.tier] + (rateLimit.tier_detected ? "" : " (not yet checked)")
+    : "";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
@@ -77,26 +89,36 @@ export function SettingsMenu() {
             <div>
               <label className="text-xs text-[var(--text-secondary)] block mb-1">
                 <Activity className="w-3 h-3 inline mr-1" />
-                API Budget ({rateLimit.tier === "patron" ? "Patron" : "Free"} tier)
+                API usage ({tierName} tier)
               </label>
-              <div className="bg-[var(--bg-secondary)] rounded px-3 py-2">
-                <div className="flex justify-between text-sm mb-1">
-                  <span>{rateLimit.calls_used} / {rateLimit.weekly_budget} calls</span>
-                  <span className="text-[var(--text-secondary)]">
-                    {rateLimit.calls_remaining} left
-                  </span>
-                </div>
-                <div className="w-full h-2 bg-gray-700 rounded-full overflow-hidden">
-                  <div
-                    className="h-full rounded-full transition-all"
-                    style={{
-                      width: `${Math.min(budgetPct, 100)}%`,
-                      backgroundColor: budgetColor,
-                    }}
-                  />
-                </div>
-                <div className="text-xs text-[var(--text-secondary)] mt-1">
-                  Resets {rateLimit.week_resets_at}
+              <div className="bg-[var(--bg-secondary)] rounded px-3 py-2 space-y-2">
+                {rateLimit.endpoints.map((e) => {
+                  const pct = e.per_hour ? (e.used_last_hour / e.per_hour) * 100 : 0;
+                  const color =
+                    pct > 80 ? "var(--accent-red)" : pct > 50 ? "var(--accent-orange)" : "var(--accent-green, #22c55e)";
+                  return (
+                    <div key={e.endpoint}>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span>{ENDPOINT_NAMES[e.endpoint]}</span>
+                        <span className="text-[var(--text-secondary)]">
+                          {e.per_hour
+                            ? `${e.used_last_hour} / ${e.per_hour} this hour`
+                            : `${e.used_last_hour} this hour, no hourly cap`}
+                        </span>
+                      </div>
+                      {e.per_hour !== null && (
+                        <div className="w-full h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all"
+                            style={{ width: `${Math.min(pct, 100)}%`, backgroundColor: color }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                <div className="text-xs text-[var(--text-secondary)]">
+                  Limits are rolling one-hour windows. Calls wait automatically when a limit is reached.
                 </div>
               </div>
             </div>

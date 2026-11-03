@@ -1,6 +1,7 @@
 use crate::api::models::{ReplayData, ReplayListResponse, ReplaySearchParams};
-use crate::api::rate_limit::RateLimiter;
-use reqwest::Client;
+use crate::api::rate_limit::{retry_after, ApiTier, Endpoint, RateLimiter};
+use reqwest::{Client, IntoUrl, Response};
+use tokio::time::Duration;
 
 const BASE_URL: &str = "https://ballchasing.com/api";
 
@@ -19,24 +20,62 @@ impl BallchasingClient {
         }
     }
 
-    pub async fn fetch_replay(
-        &self,
-        replay_id: &str,
-        store: &tauri_plugin_store::Store<tauri::Wry>,
-    ) -> Result<ReplayData, String> {
-        self.rate_limiter.acquire(store).await?;
+    /// Reads the account's patron tier from `GET /api/` once per session so the
+    /// limiter uses that tier's limits. Failure leaves the conservative default.
+    async fn ensure_tier(&self) {
+        if !self.rate_limiter.needs_tier_detection().await {
+            return;
+        }
+        #[derive(serde::Deserialize)]
+        struct Account {
+            #[serde(rename = "type")]
+            kind: Option<String>,
+        }
+        let account = self
+            .client
+            .get(format!("{}/", BASE_URL))
+            .header("Authorization", &self.api_key)
+            .send()
+            .await
+            .ok()
+            .filter(|r| r.status().is_success());
+        if let Some(resp) = account
+            && let Ok(account) = resp.json::<Account>().await
+        {
+            let tier = ApiTier::from_api_type(account.kind.as_deref().unwrap_or(""));
+            eprintln!("ballchasing tier: {:?}", tier);
+            self.rate_limiter.set_tier(tier).await;
+        }
+    }
 
-        let url = format!("{}/replays/{}", BASE_URL, replay_id);
-
+    /// Sends an authorized GET within the endpoint group's limits. A 429 pushes
+    /// the group's next call back by `Retry-After` (default 30s) and is returned
+    /// as an error with the wait time.
+    async fn send(&self, endpoint: Endpoint, url: impl IntoUrl) -> Result<Response, String> {
+        self.ensure_tier().await;
+        self.rate_limiter.acquire(endpoint).await;
         let response = self
             .client
-            .get(&url)
+            .get(url)
             .header("Authorization", &self.api_key)
             .send()
             .await
             .map_err(|e| format!("Request failed: {}", e))?;
+        if response.status().as_u16() == 429 {
+            let wait = retry_after(response.headers()).unwrap_or(Duration::from_secs(30));
+            self.rate_limiter.back_off(endpoint, wait).await;
+            return Err(format!(
+                "ballchasing.com rate limit hit. Try again in {} seconds.",
+                wait.as_secs()
+            ));
+        }
+        Ok(response)
+    }
 
-        self.rate_limiter.update_from_headers(response.headers()).await;
+    pub async fn fetch_replay(&self, replay_id: &str) -> Result<ReplayData, String> {
+        let response = self
+            .send(Endpoint::Get, format!("{}/replays/{}", BASE_URL, replay_id))
+            .await?;
 
         let status = response.status();
         if !status.is_success() {
@@ -44,7 +83,6 @@ impl BallchasingClient {
             return Err(match status.as_u16() {
                 401 => "Invalid API key. Check your ballchasing.com API key.".to_string(),
                 404 => format!("Replay '{}' not found.", replay_id),
-                429 => "Rate limited. Please wait a moment and try again.".to_string(),
                 _ => format!("API error {}: {}", status, body),
             });
         }
@@ -55,31 +93,16 @@ impl BallchasingClient {
             .map_err(|e| format!("Failed to parse replay data: {}", e))
     }
 
-    pub async fn download_replay(
-        &self,
-        replay_id: &str,
-        store: &tauri_plugin_store::Store<tauri::Wry>,
-    ) -> Result<Vec<u8>, String> {
-        self.rate_limiter.acquire(store).await?;
-
-        let url = format!("{}/replays/{}/file", BASE_URL, replay_id);
-
+    pub async fn download_replay(&self, replay_id: &str) -> Result<Vec<u8>, String> {
         let response = self
-            .client
-            .get(&url)
-            .header("Authorization", &self.api_key)
-            .send()
-            .await
-            .map_err(|e| format!("Download failed: {}", e))?;
-
-        self.rate_limiter.update_from_headers(response.headers()).await;
+            .send(Endpoint::File, format!("{}/replays/{}/file", BASE_URL, replay_id))
+            .await?;
 
         let status = response.status();
         if !status.is_success() {
             return Err(match status.as_u16() {
                 401 => "Invalid API key.".to_string(),
                 404 => format!("Replay file '{}' not found.", replay_id),
-                429 => "Rate limited. Please wait.".to_string(),
                 _ => format!("Download error {}", status),
             });
         }
@@ -91,31 +114,14 @@ impl BallchasingClient {
             .map_err(|e| format!("Failed to read replay file: {}", e))
     }
 
-    pub async fn search_replays(
-        &self,
-        params: &ReplaySearchParams,
-        store: &tauri_plugin_store::Store<tauri::Wry>,
-    ) -> Result<ReplayListResponse, String> {
-        self.rate_limiter.acquire(store).await?;
-
-        let url = search_url(params)?;
-
-        let response = self
-            .client
-            .get(url)
-            .header("Authorization", &self.api_key)
-            .send()
-            .await
-            .map_err(|e| format!("Search request failed: {}", e))?;
-
-        self.rate_limiter.update_from_headers(response.headers()).await;
+    pub async fn search_replays(&self, params: &ReplaySearchParams) -> Result<ReplayListResponse, String> {
+        let response = self.send(Endpoint::List, search_url(params)?).await?;
 
         let status = response.status();
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
             return Err(match status.as_u16() {
                 401 => "Invalid API key. Check your ballchasing.com API key.".to_string(),
-                429 => "Rate limited. Please wait a moment and try again.".to_string(),
                 _ => format!("Search error {}: {}", status, body),
             });
         }

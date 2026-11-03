@@ -32,7 +32,7 @@ pub async fn fetch_replay(
         .ok_or("No API key configured. Please set your ballchasing.com API key.")?;
 
     let client = BallchasingClient::new(api_key, (*rate_limiter).clone());
-    let replay = client.fetch_replay(&replay_id, &store).await?;
+    let replay = client.fetch_replay(&replay_id).await?;
 
     // Debug: log first player's demo stats
     if let Some(blue) = &replay.blue
@@ -61,7 +61,7 @@ pub async fn download_and_parse_replay(
         .ok_or("No API key configured.")?;
 
     let client = BallchasingClient::new(api_key, (*rate_limiter).clone());
-    let replay_bytes = client.download_replay(&replay_id, &store).await
+    let replay_bytes = client.download_replay(&replay_id).await
         .map_err(|e| format!("Download failed: {}", e))?;
 
     eprintln!("Downloaded replay: {} bytes", replay_bytes.len());
@@ -81,10 +81,16 @@ pub async fn download_and_parse_replay(
 }
 
 #[tauri::command]
-pub async fn set_api_key(app: tauri::AppHandle, key: String) -> Result<(), String> {
+pub async fn set_api_key(
+    app: tauri::AppHandle,
+    rate_limiter: State<'_, RateLimiter>,
+    key: String,
+) -> Result<(), String> {
     let store = app.store("settings.json").map_err(|e| e.to_string())?;
     store.set("api_key", serde_json::json!(key));
     store.save().map_err(|e| e.to_string())?;
+    // A different key can belong to a different patron tier
+    rate_limiter.reset_tier().await;
     Ok(())
 }
 
@@ -117,7 +123,7 @@ pub async fn search_player_replays(
         .ok_or("No API key configured.")?;
 
     let client = BallchasingClient::new(api_key, (*rate_limiter).clone());
-    client.search_replays(&params, &store).await
+    client.search_replays(&params).await
 }
 
 #[tauri::command]
