@@ -36,3 +36,27 @@ export interface AggregateProgress {
   total: number;
   replay_id: string;
 }
+
+export type Axis = "aggression" | "mechanical" | "boost_discipline" | "team_play" | "aerial_tendency";
+
+export interface AxisScore {
+  axis: Axis;
+  /** 0-100: weighted percentile at the player's rank */
+  value: number;
+  /** 80% bootstrap interval [low, high] */
+  interval: [number, number];
+  inputs_used: string[];
+}
+
+/** Mirrors `src-tauri/src/profile/playstyle.rs`. Descriptive, not evaluative. */
+export interface PlaystyleProfile {
+  player: string;
+  rank: string;
+  rank_used: string;
+  games: number;
+  /** empty below 5 games */
+  axes: AxisScore[];
+  /** null below 10 games, or unless its defining axes clear their thresholds with confidence */
+  archetype: string | null;
+  archetype_reason: string;
+}

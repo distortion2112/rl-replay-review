@@ -7,7 +7,7 @@ use tauri_plugin_store::StoreExt;
 use crate::api::ballchasing::BallchasingClient;
 use crate::benchmark::{self, Benchmarks, RankLookup};
 use crate::coaching::{self, EvidencePack};
-use crate::profile::{PlayerAggregate, Skipped};
+use crate::profile::{self, PlayerAggregate, PlaystyleProfile, Skipped};
 use crate::api::models::{PlayerData, ReplayData, ReplayListResponse, ReplaySearchParams};
 use crate::api::rate_limit::{RateLimitStatus, RateLimiter};
 use crate::analysis::boost::{analyze_boost, BoostInsight};
@@ -243,4 +243,17 @@ pub fn generate_coaching_report(
 ) -> Result<EvidencePack, String> {
     let data = load_benchmarks(&app, &cache)?;
     coaching::generate_report(&aggregate, &rank, &data)
+}
+
+/// How a player plays on five axes, relative to their rank. Descriptive only:
+/// coaching never treats an axis as a weakness.
+#[tauri::command]
+pub fn compute_playstyle(
+    app: tauri::AppHandle,
+    cache: State<'_, BenchmarkCache>,
+    aggregate: PlayerAggregate,
+    rank: String,
+) -> Result<PlaystyleProfile, String> {
+    let data = load_benchmarks(&app, &cache)?;
+    profile::compute_playstyle(&aggregate, &rank, &data)
 }

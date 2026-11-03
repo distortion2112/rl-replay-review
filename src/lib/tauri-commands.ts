@@ -3,7 +3,7 @@ import type { ReplayData, PlayerData, ReplayListResponse, ReplaySearchParams } f
 import type { RotationInsight, BoostInsight, RateLimitStatus } from "../types/analysis";
 import type { FrameData } from "../types/frames";
 import type { RankLookup } from "../types/benchmark";
-import type { PlayerAggregate } from "../types/profile";
+import type { PlayerAggregate, PlaystyleProfile } from "../types/profile";
 import type { EvidencePack } from "../types/coaching";
 
 export async function fetchReplay(replayId: string): Promise<ReplayData> {
@@ -58,6 +58,11 @@ export async function buildPlayerAggregate(playerId: string, replayIds: string[]
 /** Compares an aggregate to the benchmarks at `rank` (e.g. "champion-1") and the tier above. */
 export async function generateCoachingReport(aggregate: PlayerAggregate, rank: string): Promise<EvidencePack> {
   return invoke("generate_coaching_report", { aggregate, rank });
+}
+
+/** Five-axis playstyle relative to `rank`. Descriptive, not a judgment. */
+export async function computePlaystyle(aggregate: PlayerAggregate, rank: string): Promise<PlaystyleProfile> {
+  return invoke("compute_playstyle", { aggregate, rank });
 }
 
 export async function getRateLimitStatus(): Promise<RateLimitStatus> {
