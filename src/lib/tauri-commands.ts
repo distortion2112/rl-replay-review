@@ -4,6 +4,7 @@ import type { RotationInsight, BoostInsight, RateLimitStatus } from "../types/an
 import type { FrameData } from "../types/frames";
 import type { RankLookup } from "../types/benchmark";
 import type { PlayerAggregate } from "../types/profile";
+import type { EvidencePack } from "../types/coaching";
 
 export async function fetchReplay(replayId: string): Promise<ReplayData> {
   return invoke("fetch_replay", { replayId });
@@ -52,6 +53,11 @@ export async function getRankBenchmark(rank: string): Promise<RankLookup> {
  */
 export async function buildPlayerAggregate(playerId: string, replayIds: string[]): Promise<PlayerAggregate> {
   return invoke("build_player_aggregate", { playerId, replayIds });
+}
+
+/** Compares an aggregate to the benchmarks at `rank` (e.g. "champion-1") and the tier above. */
+export async function generateCoachingReport(aggregate: PlayerAggregate, rank: string): Promise<EvidencePack> {
+  return invoke("generate_coaching_report", { aggregate, rank });
 }
 
 export async function getRateLimitStatus(): Promise<RateLimitStatus> {
